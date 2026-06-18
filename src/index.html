@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>CakeAI</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- TITLEBAR -->
+<div class="titlebar" id="titlebar">
+  <div class="winbtns">
+    <button class="wb red"    data-tip="Закрыть"       onclick="API.close()">✕</button>
+    <button class="wb yellow" data-tip="Свернуть"      onclick="API.minimize()">−</button>
+    <button class="wb green"  data-tip="На весь экран" onclick="API.maximize()">⊡</button>
+  </div>
+  <span class="appname">Cake<em>AI</em></span>
+  <span class="provider-tag" id="providerTag">Нет ключа</span>
+  <div class="titlebar-right">
+    <button class="hdr-btn" onclick="Search.open()">🔍 Поиск</button>
+    <button class="hdr-btn" onclick="Settings.open()">⚙ Настройки</button>
+    <button class="hdr-btn" onclick="Chat.newChat()">＋ Новый чат</button>
+  </div>
+</div>
+
+<!-- MAIN LAYOUT -->
+<div class="layout">
+
+  <!-- LEFT: история чатов -->
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <span class="sidebar-label">ИСТОРИЯ</span>
+      <button class="icon-btn" title="Сохранить чат" onclick="Chat.saveCurrentChat()">💾</button>
+    </div>
+    <div class="history-list" id="historyList" style="flex:1;overflow-y:auto;">
+      <div class="hist-empty">Нет сохранённых чатов</div>
+    </div>
+    <button class="open-folder-btn" onclick="Chat.newChat()">＋ Новый чат</button>
+  </aside>
+
+  <!-- MIDDLE: tabs + editor/chat -->
+  <div class="workspace">
+
+    <!-- Tab bar -->
+    <div class="tabbar" id="tabbar">
+      <div class="tab active" id="tab-chat" onclick="Workspace.showChat()">💬 Чат</div>
+    </div>
+
+    <!-- Editor -->
+    <div class="editor-panel" id="editorPanel" style="display:none">
+      <div class="editor-toolbar">
+        <span id="editorFileName" class="editor-filename">—</span>
+        <div class="editor-actions">
+          <button class="e-btn ai"   onclick="Chat.askAboutFile()">✦ Спросить AI</button>
+          <button class="e-btn"      onclick="Editor.discard()">↩ Сбросить</button>
+          <button class="e-btn save" onclick="Editor.save()" id="saveBtn">💾 Сохранить</button>
+        </div>
+      </div>
+      <textarea id="codeEditor" spellcheck="false"></textarea>
+    </div>
+
+    <!-- Chat -->
+    <div class="chat-panel" id="chatPanel">
+      <div class="chat-messages" id="chatMessages">
+        <div class="welcome" id="welcomeScreen">
+          <div class="welcome-logo">Cake<em>AI</em></div>
+          <div class="welcome-sub">Открой папку проекта слева или задай вопрос прямо сейчас.</div>
+          <div class="chips">
+            <span class="chip gen" onclick="Chat.quick('Напиши autofarm для Roblox с TweenService и RemoteEvent')">Autofarm скрипт</span>
+            <span class="chip gen" onclick="Chat.quick('Как создать новую неделю в FNF Psych Engine?')">FNF неделя</span>
+            <span class="chip gen" onclick="Chat.quick('Напиши Telegram бота на aiogram 3.x')">Telegram bot</span>
+            <span class="chip gen" onclick="Chat.quick('Объясни открытый файл подробно')">Объясни файл</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="chat-input-area">
+        <div class="input-box" id="inputBox">
+          <div class="input-top">
+            <span class="file-pill" id="filePill" style="display:none">
+              <span id="filePillName"></span>
+              <button onclick="Chat.clearFileCtx()">✕</button>
+            </span>
+          </div>
+          <textarea id="chatInput" placeholder="Спроси что угодно..."></textarea>
+          <div class="input-bottom">
+            <div class="input-chips">
+              <button class="input-chip" id="chipThink" onclick="Chat.toggleThink()" title="Ai Model Thinking">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+                DeepThink
+              </button>
+              <button class="input-chip" id="chipSearch" onclick="Chat.toggleWebSearch()" title="Поиск в интернете">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+                Search
+              </button>
+            </div>
+            <button class="send-btn" id="sendBtn" onclick="Chat.send()">▶</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT: файловый менеджер -->
+  <aside class="sidebar-right">
+    <div class="sidebar-head">
+      <span class="sidebar-label">ПРОЕКТ</span>
+      <div class="sidebar-actions">
+        <button class="icon-btn" title="Открыть папку" onclick="Files.openFolder()">📂</button>
+        <button class="icon-btn" title="Новый файл"    onclick="Files.newFile()"   id="btn-newfile"   style="display:none">+📄</button>
+        <button class="icon-btn" title="Новая папка"   onclick="Files.newFolder()" id="btn-newfolder" style="display:none">+📁</button>
+        <button class="icon-btn" title="Обновить"      onclick="Files.refresh()"   id="btn-refresh"   style="display:none">↺</button>
+      </div>
+    </div>
+    <div class="file-tree" id="fileTree">
+      <div class="tree-empty">Папка не открыта</div>
+    </div>
+    <button class="open-folder-btn" onclick="Files.openFolder()">📂 Открыть папку</button>
+  </aside>
+
+</div>
+
+<!-- STATUSBAR -->
+<div class="statusbar">
+  <span class="status-dot" id="statusDot"></span>
+  <span id="statusText">Готов</span>
+  <span class="status-sep"></span>
+  <span id="statusFolder" style="display:none">📂 <span id="statusFolderName"></span></span>
+  <span id="statusFile"   style="display:none">📄 <span id="statusFileName"></span></span>
+  <span style="margin-left:auto;color:var(--t2)">CakeAI v2.0</span>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-bg" id="settingsModal" style="display:none" onclick="Settings.onBgClick(event)">
+  <div class="modal">
+    <div class="modal-head">
+      <span>⚙ Настройки</span>
+      <button onclick="Settings.close()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="setting-section">
+        <div class="setting-label">API Ключ</div>
+        <div class="key-row">
+          <input type="password" id="keyInput" placeholder="Вставь ключ сюда..." oninput="Settings.onKeyChange(this.value)">
+          <button class="apply-btn" onclick="Settings.applyKey()">Применить</button>
+        </div>
+        <div class="key-detected" id="keyDetected" style="display:none"></div>
+        <div class="key-unknown"  id="keyUnknown"  style="display:none">
+          ⚠️ Извиняюсь, я не знаю такого ключа.<br>
+          В будущем будет добавлена поддержка новых провайдеров.
+        </div>
+      </div>
+
+      <div class="setting-section">
+        <div class="setting-label">Системный промпт <span style="color:var(--t2);font-weight:400;font-size:11px">(добавляется поверх базового)</span></div>
+        <textarea id="systemPromptInput" placeholder="Например: Ты опытный Lua разработчик. Всегда пиши код с комментариями на русском." style="width:100%;height:72px;resize:vertical;background:var(--bg2);color:var(--t1);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:monospace;font-size:12px;box-sizing:border-box;outline:none;" oninput="Settings.saveSystemPrompt(this.value)"></textarea>
+        <div style="color:var(--t2);font-size:11px;margin-top:4px">Сохраняется автоматически</div>
+      </div>
+
+      <div class="setting-section">
+        <div class="setting-label">Провайдер (определяется автоматически по ключу)</div>
+        <div class="providers">
+          <div class="provider-card" data-p="claude"   onclick="Settings.pickProvider('claude')">
+            <div class="provider-card-header">
+              <div class="p-name claude">Claude</div>
+              <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('claude', event)">⚙</button>
+            </div>
+            <div class="p-desc">Anthropic. Лучший для кода.</div>
+            <div class="p-model" data-p="claude"></div>
+            <div class="p-key">sk-ant-api03-...</div>
+            <div class="p-link" onclick="event.stopPropagation();window.API.openExternal('https://console.anthropic.com/settings/keys')">🔑 Получить ключ</div>
+          </div>
+          <div class="provider-card" data-p="openai"   onclick="Settings.pickProvider('openai')">
+            <div class="provider-card-header">
+              <div class="p-name openai">ChatGPT</div>
+              <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('openai', event)">⚙</button>
+            </div>
+            <div class="p-desc">OpenAI GPT-4o.</div>
+            <div class="p-model" data-p="openai"></div>
+            <div class="p-key">sk-proj-... (длинный)</div>
+            <div class="p-link" onclick="event.stopPropagation();Browser.open('https://platform.openai.com/api-keys')">🔑 Получить ключ</div>
+          </div>
+          <div class="provider-card" data-p="gemini"   onclick="Settings.pickProvider('gemini')">
+            <div class="provider-card-header">
+              <div class="p-name gemini">Gemini</div>
+              <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('gemini', event)">⚙</button>
+            </div>
+            <div class="p-desc">Google. Есть бесплатный тариф.</div>
+            <div class="p-model" data-p="gemini"></div>
+            <div class="p-key">AIzaSy...</div>
+            <div class="p-link" onclick="event.stopPropagation();Browser.open('https://aistudio.google.com/apikey')">🔑 Получить ключ</div>
+          </div>
+          <div class="provider-card" data-p="deepseek" onclick="Settings.pickProvider('deepseek')">
+            <div class="provider-card-header">
+              <div class="p-name deepseek">DeepSeek</div>
+              <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('deepseek', event)">⚙</button>
+            </div>
+            <div class="p-desc">Дешёвый, хорош в коде.</div>
+            <div class="p-model" data-p="deepseek"></div>
+            <div class="p-key">sk-... (короткий) / dsk-...</div>
+            <div class="p-link" onclick="event.stopPropagation();Browser.open('https://platform.deepseek.com/api_keys')">🔑 Получить ключ</div>
+          </div>
+          <div class="provider-card" data-p="groq" onclick="Settings.pickProvider('groq')">
+            <div class="provider-card-header">
+              <div class="p-name groq">Groq</div>
+              <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('groq', event)">⚙</button>
+            </div>
+            <div class="p-desc">Бесплатный. Llama 3.3 70B.</div>
+            <div class="p-model" data-p="groq"></div>
+            <div class="p-key">gsk_...</div>
+            <div class="p-link" onclick="event.stopPropagation();Browser.open('https://console.groq.com/keys')">🔑 Получить ключ</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- MODEL PICKER -->
+<div class="model-picker" id="modelPicker" style="display:none" onclick="event.stopPropagation()">
+  <div class="model-picker-head">
+    <span id="modelPickerTitle">Модели</span>
+    <button onclick="Settings.closeModelPicker()">✕</button>
+  </div>
+  <div class="model-picker-list" id="modelPickerList"></div>
+  <div class="model-picker-hint" id="modelPickerHint"></div>
+</div>
+
+<!-- SEARCH MODAL -->
+<div class="search-overlay" id="searchOverlay" style="display:none" onclick="Search.onBgClick(event)">
+  <div class="search-modal">
+    <div class="search-tabs">
+      <button class="search-tab active" data-tab="files"   onclick="Search.setTab('files')">📁 Файлы</button>
+      <button class="search-tab"        data-tab="history" onclick="Search.setTab('history')">💬 История</button>
+      <button class="search-close" onclick="Search.close()">✕</button>
+    </div>
+    <div class="search-input-wrap">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="searchInput" placeholder="Поиск по файлам проекта..."
+        oninput="Search.onInput(this.value)"
+        onkeydown="if(event.key==='Escape')Search.close()">
+    </div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</div>
+
+<script src="files.js"></script>
+<script src="editor.js"></script>
+<script src="history.js"></script>
+<script src="chat.js"></script>
+<script src="settings.js"></script>
+<script src="search.js"></script>
+<script src="workspace.js"></script>
+<script src="app.js"></script>
+<!-- Встроенный браузер -->
+<div id="browserOverlay" style="display:none;position:fixed;inset:0;z-index:10000;flex-direction:column;background:#0e0e14;">
+  <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#1a1a24;border-bottom:1px solid #2a2a3a;">
+    <button onclick="Browser.back()" style="background:#2a2a3a;border:none;color:#aaa;padding:4px 10px;border-radius:4px;cursor:pointer;">←</button>
+    <button onclick="Browser.forward()" style="background:#2a2a3a;border:none;color:#aaa;padding:4px 10px;border-radius:4px;cursor:pointer;">→</button>
+    <div id="browserUrl" style="flex:1;background:#2a2a3a;color:#ccc;padding:4px 10px;border-radius:4px;font-size:12px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
+    <button onclick="Browser.close()" style="background:#c0392b;border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;">✕ Закрыть</button>
+  </div>
+  <webview id="browserWebview" style="flex:1;width:100%;" allowpopups></webview>
+</div>
+
+<script>
+const Browser = (() => {
+  const overlay = document.getElementById('browserOverlay')
+  const wv = document.getElementById('browserWebview')
+  const urlBar = document.getElementById('browserUrl')
+
+  function open(url) {
+    overlay.style.display = 'flex'
+    wv.src = url
+    urlBar.textContent = url
+    wv.addEventListener('did-navigate', (e) => { urlBar.textContent = e.url }, { passive: true })
+    wv.addEventListener('did-navigate-in-page', (e) => { urlBar.textContent = e.url }, { passive: true })
+  }
+
+  function close() {
+    overlay.style.display = 'none'
+    wv.src = 'about:blank'
+  }
+
+  function back() { wv.goBack() }
+  function forward() { wv.goForward() }
+
+  return { open, close, back, forward }
+})()
+</script>
+
+</body>
+</html>
