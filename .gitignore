@@ -1,0 +1,9 @@
+node_modules/
+dist/
+build/*.exe
+*.log
+.DS_Store
+Thumbs.db
+.env
+machine.key
+history.enc
