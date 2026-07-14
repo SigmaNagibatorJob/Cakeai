@@ -1,6 +1,6 @@
 const Files = (() => {
   let rootPath = null
-  let folderStructure = [] // flat list of all visible files/folders
+  let folderStructure = []
 
   const ICONS = {
     '.lua': '🔶', '.luau': '🔶', '.py': '🐍', '.js': '📜', '.ts': '📘',
@@ -31,20 +31,27 @@ const Files = (() => {
   async function openFolder() {
     const p = await API.openFolder()
     if (!p) return
+    await restoreFolder(p)
+  }
+
+  async function restoreFolder(p) {
     rootPath = p
     localStorage.setItem('cakeai_folder', p)
     document.getElementById('statusFolder').style.display = 'inline'
     document.getElementById('statusFolderName').textContent = p.split(/[/\\]/).pop()
-    document.getElementById('btn-newfile').style.display   = 'flex'
-    document.getElementById('btn-newfolder').style.display = 'flex'
-    document.getElementById('btn-refresh').style.display   = 'flex'
+    const btnNewFile = document.getElementById('btn-newfile')
+    const btnNewFolder = document.getElementById('btn-newfolder')
+    const btnRefresh = document.getElementById('btn-refresh')
+    if (btnNewFile) btnNewFile.style.display = 'flex'
+    if (btnNewFolder) btnNewFolder.style.display = 'flex'
+    if (btnRefresh) btnRefresh.style.display = 'flex'
     folderStructure = []
     await collectStructure(rootPath, 0)
     await renderTree(rootPath, document.getElementById('fileTree'), 0)
   }
 
   async function collectStructure(dirPath, depth) {
-    if (depth > 3) return // не уходим глубже 3 уровней
+    if (depth > 3) return
     const entries = await API.readDir(dirPath)
     if (!Array.isArray(entries)) return
     for (const e of entries) {
@@ -118,25 +125,97 @@ const Files = (() => {
     })
   }
 
+  // ── КАСТОМНЫЕ МОДАЛКИ (вместо prompt() который не работает в Electron) ──
+
+  function showPromptModal(title, placeholder) {
+    return new Promise((resolve) => {
+      // Удаляем существующую модалку если есть
+      document.getElementById('promptModal')?.remove()
+
+      const overlay = document.createElement('div')
+      overlay.id = 'promptModal'
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999;'
+
+      const box = document.createElement('div')
+      box.style.cssText = 'width:340px;background:var(--bg1);border:1px solid var(--border);border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:14px;'
+
+      const label = document.createElement('div')
+      label.textContent = title
+      label.style.cssText = 'font-size:14px;font-weight:600;color:var(--t0);'
+
+      const input = document.createElement('input')
+      input.type = 'text'
+      input.placeholder = placeholder
+      input.style.cssText = 'background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:9px 12px;font-size:13px;outline:none;color:var(--t0);font-family:Consolas,monospace;width:100%;box-sizing:border-box;'
+      input.addEventListener('focus', () => { input.style.borderColor = 'var(--accent)' })
+      input.addEventListener('blur', () => { input.style.borderColor = 'var(--border)' })
+
+      const btns = document.createElement('div')
+      btns.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;'
+
+      const cancelBtn = document.createElement('button')
+      cancelBtn.textContent = 'Отмена'
+      cancelBtn.style.cssText = 'padding:7px 16px;border-radius:6px;font-size:12px;background:var(--bg3);border:1px solid var(--border);color:var(--t2);cursor:pointer;'
+
+      const okBtn = document.createElement('button')
+      okBtn.textContent = 'Создать'
+      okBtn.style.cssText = 'padding:7px 16px;border-radius:6px;font-size:12px;font-weight:700;background:var(--accent);color:#0d0f12;border:none;cursor:pointer;'
+
+      const submit = () => {
+        const val = input.value.trim()
+        overlay.remove()
+        resolve(val || null)
+      }
+      const cancel = () => {
+        overlay.remove()
+        resolve(null)
+      }
+
+      okBtn.onclick = submit
+      cancelBtn.onclick = cancel
+      overlay.onclick = (e) => { if (e.target === overlay) cancel() }
+
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); submit() }
+        if (e.key === 'Escape') { e.preventDefault(); cancel() }
+      })
+
+      btns.appendChild(cancelBtn)
+      btns.appendChild(okBtn)
+      box.appendChild(label)
+      box.appendChild(input)
+      box.appendChild(btns)
+      overlay.appendChild(box)
+      document.body.appendChild(overlay)
+
+      // Фокус после добавления в DOM
+      setTimeout(() => { input.focus() }, 10)
+    })
+  }
+
   async function newFile() {
-    if (!rootPath) return
-    const name = prompt('Имя файла (с расширением):')
+    if (!rootPath) { Status.set('Сначала открой папку проекта', 'err'); return }
+    const name = await showPromptModal('Имя файла (с расширением):', 'например: main.py')
     if (!name) return
+    Status.set('Создаю файл...', 'busy')
     const res = await API.createFile(rootPath, name)
     if (res.error) { Status.set(res.error, 'err'); return }
     await refresh()
     openFile(res.path, name)
+    Status.set('Файл создан: ' + name, 'ok')
+    setTimeout(() => Status.set('Готов', 'ok'), 2000)
   }
 
   async function newFolder() {
-    if (!rootPath) return
-    const name = prompt('Имя папки:')
+    if (!rootPath) { Status.set('Сначала открой папку проекта', 'err'); return }
+    const name = await showPromptModal('Имя папки:', 'например: src')
     if (!name) return
+    Status.set('Создаю папку...', 'busy')
     const res = await API.createDir(rootPath, name)
     if (res.error) { Status.set(res.error, 'err'); return }
-    folderStructure = []
-    await collectStructure(rootPath, 0)
     await refresh()
+    Status.set('Папка создана: ' + name, 'ok')
+    setTimeout(() => Status.set('Готов', 'ok'), 2000)
   }
 
   async function deleteEntry(filePath, name) {
@@ -144,9 +223,10 @@ const Files = (() => {
     const res = await API.deleteEntry(filePath)
     if (!res.ok) { Status.set('Ошибка: ' + res.error, 'err'); return }
     Workspace.closeFileTab(filePath)
-    folderStructure = folderStructure.filter(e => e.name !== name)
+    folderStructure = folderStructure.filter(e => e.fullPath !== filePath)
     await refresh()
     Status.set('Удалено: ' + name, 'ok')
+    setTimeout(() => Status.set('Готов', 'ok'), 2000)
   }
 
   async function refresh() {
@@ -166,6 +246,6 @@ const Files = (() => {
     })).filter(e => e.path)
   }
 
-  return { openFolder, openFile, newFile, newFolder, deleteEntry, refresh, getFolderContext, getRootPath, getAllFiles }
+  return { openFolder, restoreFolder, openFile, newFile, newFolder, deleteEntry, refresh, getFolderContext, getRootPath, getAllFiles }
 })()
 window.Files = Files
