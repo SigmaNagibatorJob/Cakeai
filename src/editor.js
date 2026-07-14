@@ -49,6 +49,7 @@ const Editor = (() => {
   }
 
   function getPath() { return filePath }
+  function isDirty() { return dirty }
 
   // Keyboard shortcuts
   document.addEventListener('DOMContentLoaded', () => {
@@ -65,6 +66,7 @@ const Editor = (() => {
     ed.addEventListener('input', () => markDirty())
   })
 
-  return { load, save, discard, getContent, getPath }
+  // BUGFIX: markDirty и isDirty теперь экспортируются
+  return { load, save, discard, getContent, getPath, markDirty, isDirty }
 })()
 window.Editor = Editor
