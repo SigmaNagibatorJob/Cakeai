@@ -39,7 +39,8 @@ const Workspace = (() => {
       const div = document.createElement('div')
       div.className = 'tab'
       div.dataset.path = t.path
-      div.innerHTML = `📄 ${t.name} <button class="tab-close" onclick="event.stopPropagation();Workspace.closeFileTab('${esc(t.path)}')">✕</button>`
+      // BUGFIX: экранируем путь для onclick
+      div.innerHTML = `📄 ${esc(t.name)} <button class="tab-close" onclick="event.stopPropagation();Workspace.closeFileTab('${escAttr(t.path)}')">✕</button>`
       div.addEventListener('click', () => {
         Files.openFile(t.path, t.name)
       })
@@ -47,7 +48,8 @@ const Workspace = (() => {
     })
   }
 
-  function esc(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'") }
+  function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+  function escAttr(s) { return s.replace(/\\/g,'\\\\').replace(/'/g,"\\'") }
 
   return { showChat, showFileTab, openFileTab, closeFileTab }
 })()
