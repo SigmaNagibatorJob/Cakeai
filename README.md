@@ -76,7 +76,7 @@
 ### Из исходников
 
 ```bash
-git clone https://github.com/Cakein228/CakeAI.git
+git clone https://github.com/SigmaNagibatorJob/CakeAI.git
 cd CakeAI
 npm install
 npm start
