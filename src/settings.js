@@ -16,8 +16,7 @@ const Settings = (() => {
     document.getElementById('keyUnknown').style.display  = 'none'
     const sp = document.getElementById('systemPromptInput')
     if (sp) sp.value = localStorage.getItem('cakeai_systemprompt') || ''
-    const tog = document.getElementById('deepseekThinkingToggle')
-    if (tog) tog.checked = localStorage.getItem('cakeai_deepseek_thinking') === '1'
+    // FIX: убран мёртвый код с несуществующим #deepseekThinkingToggle
     updateCards()
     document.getElementById('settingsModal').style.display = 'flex'
   }
@@ -162,17 +161,8 @@ const Settings = (() => {
     closeModelPicker()
   })
 
-  function setDeepseekThinking(enabled) {
-    if (enabled) {
-      localStorage.setItem('cakeai_deepseek_thinking', '1')
-      // автоматически переключаем модель на deepseek-reasoner
-      localStorage.setItem('cakeai_model_deepseek', 'deepseek-reasoner')
-      updateModelLabels()
-    } else {
-      localStorage.removeItem('cakeai_deepseek_thinking')
-    }
-  }
+  // FIX: убрана мёртвая функция setDeepseekThinking (UI-элемента нет в DOM)
 
-  return { open, close, onBgClick, onKeyChange, applyKey, pickProvider, openModelPicker, closeModelPicker, updateProviderTag, updateCards, saveSystemPrompt, setDeepseekThinking }
+  return { open, close, onBgClick, onKeyChange, applyKey, pickProvider, openModelPicker, closeModelPicker, updateProviderTag, updateCards, saveSystemPrompt }
 })()
 window.Settings = Settings
