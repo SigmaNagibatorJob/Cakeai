@@ -4,63 +4,56 @@ const Chat = (() => {
   let fileCtxContent = null
   let fileCtxName = null
 
+  let thinkEnabled = localStorage.getItem('cakeai_deepthink') === '1'
+  let webSearchEnabled = localStorage.getItem('cakeai_websearch') === '1'
+
   function showEasterEgg() {
     document.getElementById('easterEggOverlay')?.remove()
-
     const overlay = document.createElement('div')
     overlay.id = 'easterEggOverlay'
-    overlay.style.cssText = `
-      position: fixed; inset: 0; z-index: 9999;
-      background: #000;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      cursor: pointer;
-    `
-
+    overlay.style.cssText = `position: fixed; inset: 0; z-index: 9999; background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer;`
     const video = document.createElement('video')
     video.src = window.API?.getAssetPath ? window.API.getAssetPath('0xteam.mp4') : './assets/0xteam.mp4'
-    video.autoplay = true
-    video.loop = true
+    video.autoplay = true; video.loop = true
     video.style.cssText = 'max-width: 100%; max-height: 90vh; border-radius: 8px;'
     video.volume = 0.8
-
     const hint = document.createElement('div')
     hint.textContent = 'Нажми в любом месте чтобы закрыть'
     hint.style.cssText = 'color: #555; font-size: 12px; margin-top: 12px; font-family: monospace;'
-
-    overlay.appendChild(video)
-    overlay.appendChild(hint)
+    overlay.appendChild(video); overlay.appendChild(hint)
     document.body.appendChild(overlay)
-
     overlay.addEventListener('click', () => overlay.remove())
   }
 
-  let thinkEnabled = false
-  let webSearchEnabled = false
-
   function toggleThink() {
-    thinkEnabled = !thinkEnabled;
-    document.getElementById('chipThink').classList.toggle('active', thinkEnabled);
+    thinkEnabled = !thinkEnabled
+    document.getElementById('chipThink').classList.toggle('active', thinkEnabled)
     if (thinkEnabled) {
-      if (!confirm('Внимание: глубокое размышление потребляет много токенов. Продолжить?')) {
-        thinkEnabled = false;
-        document.getElementById('chipThink').classList.remove('active');
-        return;
-      }
-      localStorage.setItem('cakeai_deepthink', '1');
-      Status.set('DeepThink включён (все провайдеры)', 'ok');
+      localStorage.setItem('cakeai_deepthink', '1')
+      Status.set('DeepThink включён — AI будет размышлять', 'ok')
     } else {
-      localStorage.removeItem('cakeai_deepthink');
-      Status.set('DeepThink выключен', 'ok');
+      localStorage.removeItem('cakeai_deepthink')
+      Status.set('DeepThink выключен', 'ok')
     }
-    setTimeout(() => Status.set('Готов', 'ok'), 2000);
+    setTimeout(() => Status.set('Готов', 'ok'), 2500)
   }
 
   function toggleWebSearch() {
     webSearchEnabled = !webSearchEnabled
     document.getElementById('chipSearch').classList.toggle('active', webSearchEnabled)
-    Status.set(webSearchEnabled ? 'Поиск включён' : 'Поиск выключен', 'ok')
+    if (webSearchEnabled) {
+      localStorage.setItem('cakeai_websearch', '1')
+      Status.set('Поиск включён — буду искать в интернете', 'ok')
+    } else {
+      localStorage.removeItem('cakeai_websearch')
+      Status.set('Поиск выключен', 'ok')
+    }
     setTimeout(() => Status.set('Готов', 'ok'), 2000)
+  }
+
+  function restoreChips() {
+    document.getElementById('chipThink').classList.toggle('active', thinkEnabled)
+    document.getElementById('chipSearch').classList.toggle('active', webSearchEnabled)
   }
 
   function setFileCtx(name, content) {
@@ -101,14 +94,11 @@ const Chat = (() => {
 
   async function buildContext(userText) {
     const parts = []
-
     const folderCtx = Files.getFolderContext?.()
     if (folderCtx) parts.push(folderCtx)
-
     if (fileCtxContent && fileCtxName) {
       parts.push(`Открытый файл: ${fileCtxName}\n\`\`\`\n${fileCtxContent.slice(0, 8000)}\n\`\`\``)
     }
-
     const rootPath = Files.getRootPath?.()
     if (rootPath && userText) {
       const folderFiles = Files.getAllFiles?.() || []
@@ -121,53 +111,40 @@ const Chat = (() => {
         }
       }
     }
-
     return parts.length ? parts.join('\n\n') : null
   }
 
   function appendMsg(role, text) {
     document.getElementById('welcomeScreen')?.remove()
-
     const container = document.getElementById('chatMessages')
     const div = document.createElement('div')
     div.className = 'msg ' + role
-
     const avatar = role === 'user' ? 'Я' : 'AI'
     const label  = role === 'user' ? 'Вы' : 'Lungskull'
-
     div.innerHTML = `
       <div class="msg-avatar">${avatar}</div>
       <div class="msg-body">
         <div class="msg-role">${label}</div>
         <div class="bubble">${formatText(text)}</div>
       </div>`
-
     div.querySelectorAll('pre').forEach(pre => {
       const cp = document.createElement('button')
-      cp.className = 'cpy-btn'
-      cp.textContent = 'copy'
+      cp.className = 'cpy-btn'; cp.textContent = 'copy'
       cp.onclick = () => {
-        const code = pre.querySelector('code')?.textContent || pre.textContent
-        navigator.clipboard.writeText(code)
-        cp.textContent = '✓ ok'
-        setTimeout(() => cp.textContent = 'copy', 1500)
+        navigator.clipboard.writeText(pre.querySelector('code')?.textContent || pre.textContent)
+        cp.textContent = '✓ ok'; setTimeout(() => cp.textContent = 'copy', 1500)
       }
       pre.appendChild(cp)
-
       if (Editor.getPath()) {
         const eb = document.createElement('button')
-        eb.className = 'editor-btn'
-        eb.textContent = '→ редактор'
+        eb.className = 'editor-btn'; eb.textContent = '→ редактор'
         eb.onclick = () => {
-          const code = pre.querySelector('code')?.textContent || pre.textContent
-          document.getElementById('codeEditor').value = code
-          Editor.markDirty?.()
-          Workspace.showFileTab(Editor.getPath())
+          document.getElementById('codeEditor').value = pre.querySelector('code')?.textContent || pre.textContent
+          Editor.markDirty?.(); Workspace.showFileTab(Editor.getPath())
         }
         pre.appendChild(eb)
       }
     })
-
     container.appendChild(div)
     container.scrollTop = container.scrollHeight
   }
@@ -191,16 +168,17 @@ const Chat = (() => {
     document.getElementById('typing-msg')?.remove()
   }
 
+  function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+
   function formatText(t) {
+    t = esc(t)
     t = t.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
-      `<pre><code class="lang-${lang}">${esc(code.trim())}</code></pre>`)
+      `<pre><code class="lang-${lang}">${code.trim()}</code></pre>`)
     t = t.replace(/`([^`\n]+)`/g, '<code>$1</code>')
     t = t.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     t = t.replace(/\n/g, '<br>')
     return t
   }
-
-  function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
 
   async function send() {
     if (loading) return
@@ -210,9 +188,7 @@ const Chat = (() => {
     if (!text) return
 
     if (text.toLowerCase() === '0xteam') {
-      inp.value = ''
-      showEasterEgg()
-      return
+      inp.value = ''; showEasterEgg(); return
     }
 
     const key = localStorage.getItem('cakeai_key')
@@ -236,9 +212,35 @@ const Chat = (() => {
 
     let streamBubble = null
     let streamText = ''
+    let reasoningBubble = null
+    let reasoningText = ''
 
     API.offStream()
 
+    // ── Reasoning stream (DeepSeek-reasoner / Claude thinking) ──
+    API.onStreamReasoning(chunk => {
+      if (!reasoningBubble) {
+        hideTyping()
+        document.getElementById('welcomeScreen')?.remove()
+        const container = document.getElementById('chatMessages')
+        const div = document.createElement('div')
+        div.className = 'msg ai reasoning-msg'
+        div.innerHTML = `
+          <div class="msg-avatar">AI</div>
+          <div class="msg-body">
+            <div class="msg-role">💭 Размышления</div>
+            <div class="bubble reasoning-bubble"></div>
+          </div>`
+        container.appendChild(div)
+        reasoningBubble = div.querySelector('.reasoning-bubble')
+      }
+      reasoningText += chunk
+      reasoningBubble.innerHTML = formatText(reasoningText)
+      const container = document.getElementById('chatMessages')
+      container.scrollTop = container.scrollHeight
+    })
+
+    // ── Main answer stream ──
     API.onStreamChunk(chunk => {
       if (!streamBubble) {
         hideTyping()
@@ -268,7 +270,7 @@ const Chat = (() => {
       if (err) {
         if (!streamBubble) appendMsg('ai', '⚠️ Ошибка: ' + err)
         else streamBubble.innerHTML = formatText('⚠️ Ошибка: ' + err)
-        Status.set('Ошибка', 'err')
+        Status.set('Ошибка: ' + err, 'err')
       } else {
         if (streamBubble) {
           const parent = streamBubble.closest('.msg')
@@ -294,6 +296,7 @@ const Chat = (() => {
         }
         messages.push({ role: 'assistant', content: streamText })
 
+        // ── Автопроверка кода ──
         const lang = streamText.match(/```(\w+)/)?.[1]?.toLowerCase()
         const code = streamText.match(/```(?:\w+)?\n?([\s\S]*?)```/)?.[1]?.trim()
         const runnable = ['python','python3','js','javascript','node']
@@ -303,22 +306,54 @@ const Chat = (() => {
           const prov = localStorage.getItem('cakeai_provider') || null
           const model = prov ? (localStorage.getItem('cakeai_model_' + prov) || null) : null
           const res = await API.aiRunCheck({ code, lang, msgs: messages.slice(0,-1), key, provider: prov, model })
-          if (!res.skipped && res.ok && res.code !== code) {
-            const fixed = streamText.replace(/```(?:\w+)?\n?[\s\S]*?```/, '```' + lang + '\n' + res.code + '\n```')
-            streamText = fixed
-            messages[messages.length-1].content = fixed
-            if (streamBubble) streamBubble.innerHTML = formatText(fixed)
-          } else if (!res.skipped && !res.ok) {
-            if (streamBubble) {
-              const warn = document.createElement('div')
-              warn.className = 'code-warn'
-              warn.textContent = '⚠️ Код может не работать: ' + (res.error || '').slice(0, 120)
-              streamBubble.appendChild(warn)
+
+          // Показываем результат проверки
+          if (streamBubble) {
+            const result = document.createElement('div')
+            result.className = 'code-check-result'
+
+            if (res.skipped) {
+              // Язык не поддерживается — ничего не показываем
+              result.remove()
+            } else if (res.ok && res.code === code) {
+              // Код работает
+              result.className = 'code-check-result code-ok'
+              result.innerHTML = '<span class="check-icon">✅</span> Код проверен — работает корректно'
+              if (res.output) {
+                const out = document.createElement('div')
+                out.className = 'code-output'
+                out.textContent = res.output.slice(0, 500)
+                result.appendChild(out)
+              }
+              streamBubble.appendChild(result)
+            } else if (res.ok && res.code !== code) {
+              // Код был исправлен
+              result.className = 'code-check-result code-fixed'
+              result.innerHTML = '<span class="check-icon">🔧</span> Код исправлен и проверен — теперь работает'
+              const fixed = streamText.replace(/```(?:\w+)?\n?[\s\S]*?```/, '```' + lang + '\n' + res.code + '\n```')
+              streamText = fixed
+              messages[messages.length-1].content = fixed
+              if (streamBubble) streamBubble.innerHTML = formatText(fixed)
+              const result2 = document.createElement('div')
+              result2.className = 'code-check-result code-fixed'
+              result2.innerHTML = '<span class="check-icon">🔧</span> Код исправлен и проверен — теперь работает'
+              if (res.output) {
+                const out = document.createElement('div')
+                out.className = 'code-output'
+                out.textContent = res.output.slice(0, 500)
+                result2.appendChild(out)
+              }
+              streamBubble.appendChild(result2)
+            } else if (!res.ok) {
+              // Код не работает
+              result.className = 'code-check-result code-fail'
+              result.innerHTML = '<span class="check-icon">⚠️</span> Код может не работать: ' + (res.error || '').slice(0, 200)
+              streamBubble.appendChild(result)
             }
           }
-        }
 
-        Status.set('Готов', 'ok')
+          Status.set('Готов', 'ok')
+        } else {
       }
 
       loading = false
@@ -327,8 +362,8 @@ const Chat = (() => {
 
     try {
       const customPrompt = localStorage.getItem('cakeai_systemprompt') || ''
-      const deepthinkEnabled = localStorage.getItem('cakeai_deepthink') === '1';
-      const webSearchEnabled = localStorage.getItem('cakeai_websearch') === '1'; // или ваша переменная
+      const deepthinkEnabled = localStorage.getItem('cakeai_deepthink') === '1'
+      const webSearchEnabled = localStorage.getItem('cakeai_websearch') === '1'
       await API.aiStream({
         msgs: messages.map(m => ({ role: m.role, content: m.content })),
         mode: 'general',
@@ -337,14 +372,14 @@ const Chat = (() => {
         model,
         fileCtx,
         customPrompt: customPrompt || undefined,
-        deepthinkEnabled: deepthinkEnabled,
+        deepthinkEnabled,
         webSearch: webSearchEnabled
       })
     } catch(e) {
       API.offStream()
       hideTyping()
       appendMsg('ai', '⚠️ Ошибка: ' + e)
-      Status.set('Ошибка', 'err')
+      Status.set('Ошибка: ' + e, 'err')
       loading = false
       document.getElementById('sendBtn').disabled = false
     }
@@ -364,6 +399,6 @@ const Chat = (() => {
     Workspace.showChat()
   }
 
-  return { setFileCtx, clearFileCtx, newChat, quick, askAboutFile, send, saveCurrentChat, loadHistory, toggleThink, toggleWebSearch }
+  return { setFileCtx, clearFileCtx, newChat, quick, askAboutFile, send, saveCurrentChat, loadHistory, toggleThink, toggleWebSearch, restoreChips }
 })()
 window.Chat = Chat
