@@ -66,18 +66,23 @@ const History = (() => {
       list.innerHTML = '<div class="hist-empty">Нет сохранённых чатов</div>'
       return
     }
+    // BUGFIX: экранируем id при вставке в onclick, чтобы не сломать JS при нестандартных id
     list.innerHTML = allChats.map(c => `
-      <div class="hist-item" onclick="History.loadChat('${c.id}')">
+      <div class="hist-item" onclick="History.loadChat('${escAttr(c.id)}')">
         <div class="hist-title">${esc(c.title)}</div>
         <div class="hist-meta">
-          <span>${c.date}</span>
-          <button class="hist-del" onclick="event.stopPropagation();History.deleteChat('${c.id}')" title="Удалить">✕</button>
+          <span>${esc(c.date)}</span>
+          <button class="hist-del" onclick="event.stopPropagation();History.deleteChat('${escAttr(c.id)}')" title="Удалить">✕</button>
         </div>
       </div>`).join('')
   }
 
   function esc(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  }
+
+  function escAttr(s) {
+    return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")
   }
 
   function getAll() { return allChats }
