@@ -246,7 +246,7 @@ MIT — используй, форкай, продав, что угодно.
 
 <div align="center">
 
-**[Cakein228](https://github.com/Cakein228)**
+**[Cakein228](https://github.com/SigmaNagibatorJob)**
 
 CakeAI — не чатбот, а напарник.
 
