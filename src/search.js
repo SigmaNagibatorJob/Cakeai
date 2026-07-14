@@ -85,15 +85,20 @@ const Search = (() => {
       byFile[r.path].hits.push(r)
     })
 
+    // BUGFIX: экранируем путь и имя файла при вставке в onclick
     res.innerHTML = Object.values(byFile).map(f => `
       <div class="search-file-group">
         <div class="search-file-name">📄 ${esc(f.name)} <span class="search-count">${f.hits.length}</span></div>
         ${f.hits.map(h => `
-          <div class="search-hit" onclick="Search.openHit('${esc(h.path)}','${esc(h.file)}',${h.line})">
+          <div class="search-hit" onclick="Search.openHit('${escAttr(h.path)}','${escAttr(h.file)}',${h.line})">
             <span class="search-line">:${h.line}</span>
             <span class="search-text">${highlight(h.text.slice(0, 120), query)}</span>
           </div>`).join('')}
       </div>`).join('')
+  }
+
+  function escAttr(s) {
+    return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'")
   }
 
   function openHit(path, name, line) {
@@ -129,10 +134,11 @@ const Search = (() => {
       return
     }
 
+    // BUGFIX: экранируем chat.id при вставке в onclick
     res.innerHTML = results.map(r => `
-      <div class="search-chat-item" onclick="Search.openChat('${r.chat.id}')">
+      <div class="search-chat-item" onclick="Search.openChat('${escAttr(r.chat.id)}')">
         <div class="search-chat-title">${highlight(r.chat.title || 'Без названия', query)}</div>
-        <div class="search-chat-meta">${r.chat.date} · ${r.msgMatches.length} совпадений в сообщениях</div>
+        <div class="search-chat-meta">${esc(r.chat.date)} · ${r.msgMatches.length} совпадений в сообщениях</div>
         ${r.msgMatches.slice(0, 2).map(m => `
           <div class="search-chat-snippet">${highlight(m.content.slice(0, 100), query)}...</div>
         `).join('')}
@@ -184,16 +190,14 @@ const Search = (() => {
   }
 
   function formatWebAnswer(t) {
+    // BUGFIX: экранируем HTML перед форматированием
+    t = esc(t)
     t = t.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
-      `<pre><code>${escHtml(code.trim())}</code></pre>`)
+      `<pre><code>${code.trim()}</code></pre>`)
     t = t.replace(/`([^`\n]+)`/g, '<code>$1</code>')
     t = t.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     t = t.replace(/\n/g, '<br>')
     return t
-  }
-
-  function escHtml(s) {
-    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
   }
 
   // ── Диспетчер ─────────────────────────────────────────────────────────────
