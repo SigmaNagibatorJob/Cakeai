@@ -22,9 +22,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   // init history
   await History.init()
 
-  // restore last folder
+  // BUGFIX: восстанавливаем сохранённую папку без диалога
   const savedFolder = localStorage.getItem('cakeai_folder')
-  if (savedFolder) Files.openFolder()  // will re-prompt, or you can call internal
+  if (savedFolder) {
+    Files.restoreFolder(savedFolder)
+  }
+
+  // BUGFIX: восстанавливаем состояние чипов DeepThink / Search
+  Chat.restoreChips()
 
   // chat input auto-resize
   const inp = document.getElementById('chatInput')
