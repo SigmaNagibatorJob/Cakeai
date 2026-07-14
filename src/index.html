@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <title>CakeAI</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="reasoning.css">
 </head>
 <body>
 
@@ -85,7 +86,7 @@
           <textarea id="chatInput" placeholder="Спроси что угодно..."></textarea>
           <div class="input-bottom">
             <div class="input-chips">
-              <button class="input-chip" id="chipThink" onclick="Chat.toggleThink()" title="Ai Model Thinking">
+              <button class="input-chip" id="chipThink" onclick="Chat.toggleThink()" title="AI Reasoning">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
                 DeepThink
               </button>
@@ -169,18 +170,18 @@
             </div>
             <div class="p-desc">Anthropic. Лучший для кода.</div>
             <div class="p-model" data-p="claude"></div>
-            <div class="p-key">sk-ant-api03-...</div>
-            <div class="p-link" onclick="event.stopPropagation();window.API.openExternal('https://console.anthropic.com/settings/keys')">🔑 Получить ключ</div>
+            <div class="p-key">***-...</div>
+            <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://console.anthropic.com/settings/keys')">🔑 Получить ключ</div>
           </div>
           <div class="provider-card" data-p="openai"   onclick="Settings.pickProvider('openai')">
             <div class="provider-card-header">
               <div class="p-name openai">ChatGPT</div>
               <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('openai', event)">⚙</button>
             </div>
-            <div class="p-desc">OpenAI GPT-4o.</div>
+            <div class="p-desc">OpenAI GPT-5.5 / o3.</div>
             <div class="p-model" data-p="openai"></div>
             <div class="p-key">sk-proj-... (длинный)</div>
-            <div class="p-link" onclick="event.stopPropagation();Browser.open('https://platform.openai.com/api-keys')">🔑 Получить ключ</div>
+            <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://platform.openai.com/api-keys')">🔑 Получить ключ</div>
           </div>
           <div class="provider-card" data-p="gemini"   onclick="Settings.pickProvider('gemini')">
             <div class="provider-card-header">
@@ -190,27 +191,27 @@
             <div class="p-desc">Google. Есть бесплатный тариф.</div>
             <div class="p-model" data-p="gemini"></div>
             <div class="p-key">AIzaSy...</div>
-            <div class="p-link" onclick="event.stopPropagation();Browser.open('https://aistudio.google.com/apikey')">🔑 Получить ключ</div>
+            <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://aistudio.google.com/apikey')">🔑 Получить ключ</div>
           </div>
           <div class="provider-card" data-p="deepseek" onclick="Settings.pickProvider('deepseek')">
             <div class="provider-card-header">
               <div class="p-name deepseek">DeepSeek</div>
               <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('deepseek', event)">⚙</button>
             </div>
-            <div class="p-desc">Дешёвый, хорош в коде.</div>
+            <div class="p-desc">V4 Pro / V4 Flash. Хорош в коде.</div>
             <div class="p-model" data-p="deepseek"></div>
             <div class="p-key">sk-... (короткий) / dsk-...</div>
-            <div class="p-link" onclick="event.stopPropagation();Browser.open('https://platform.deepseek.com/api_keys')">🔑 Получить ключ</div>
+            <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://platform.deepseek.com/api_keys')">🔑 Получить ключ</div>
           </div>
           <div class="provider-card" data-p="groq" onclick="Settings.pickProvider('groq')">
             <div class="provider-card-header">
               <div class="p-name groq">Groq</div>
               <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('groq', event)">⚙</button>
             </div>
-            <div class="p-desc">Бесплатный. Llama 3.3 70B.</div>
+            <div class="p-desc">Бесплатный. Llama 4 / GPT-OSS / Qwen.</div>
             <div class="p-model" data-p="groq"></div>
             <div class="p-key">gsk_...</div>
-            <div class="p-link" onclick="event.stopPropagation();Browser.open('https://console.groq.com/keys')">🔑 Получить ключ</div>
+            <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://console.groq.com/keys')">🔑 Получить ключ</div>
           </div>
         </div>
       </div>
@@ -255,42 +256,5 @@
 <script src="search.js"></script>
 <script src="workspace.js"></script>
 <script src="app.js"></script>
-<!-- Встроенный браузер -->
-<div id="browserOverlay" style="display:none;position:fixed;inset:0;z-index:10000;flex-direction:column;background:#0e0e14;">
-  <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:#1a1a24;border-bottom:1px solid #2a2a3a;">
-    <button onclick="Browser.back()" style="background:#2a2a3a;border:none;color:#aaa;padding:4px 10px;border-radius:4px;cursor:pointer;">←</button>
-    <button onclick="Browser.forward()" style="background:#2a2a3a;border:none;color:#aaa;padding:4px 10px;border-radius:4px;cursor:pointer;">→</button>
-    <div id="browserUrl" style="flex:1;background:#2a2a3a;color:#ccc;padding:4px 10px;border-radius:4px;font-size:12px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></div>
-    <button onclick="Browser.close()" style="background:#c0392b;border:none;color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;">✕ Закрыть</button>
-  </div>
-  <webview id="browserWebview" style="flex:1;width:100%;" allowpopups></webview>
-</div>
-
-<script>
-const Browser = (() => {
-  const overlay = document.getElementById('browserOverlay')
-  const wv = document.getElementById('browserWebview')
-  const urlBar = document.getElementById('browserUrl')
-
-  function open(url) {
-    overlay.style.display = 'flex'
-    wv.src = url
-    urlBar.textContent = url
-    wv.addEventListener('did-navigate', (e) => { urlBar.textContent = e.url }, { passive: true })
-    wv.addEventListener('did-navigate-in-page', (e) => { urlBar.textContent = e.url }, { passive: true })
-  }
-
-  function close() {
-    overlay.style.display = 'none'
-    wv.src = 'about:blank'
-  }
-
-  function back() { wv.goBack() }
-  function forward() { wv.goForward() }
-
-  return { open, close, back, forward }
-})()
-</script>
-
 </body>
 </html>
