@@ -195,7 +195,10 @@ const Files = (() => {
 
   async function newFile() {
     if (!rootPath) { Status.set('Сначала открой папку проекта', 'err'); return }
-    const name = await showPromptModal('Имя файла (с расширением):', 'например: main.py')
+    const isEn = window.__lang === 'en'
+    const title = isEn ? 'File name (with extension):' : 'Имя файла (с расширением):'
+    const placeholder = isEn ? 'e.g. main.py' : 'например: main.py'
+    const name = await showPromptModal(title, placeholder)
     if (!name) return
     Status.set('Создаю файл...', 'busy')
     const res = await API.createFile(rootPath, name)
@@ -208,7 +211,10 @@ const Files = (() => {
 
   async function newFolder() {
     if (!rootPath) { Status.set('Сначала открой папку проекта', 'err'); return }
-    const name = await showPromptModal('Имя папки:', 'например: src')
+    const isEn = window.__lang === 'en'
+    const title = isEn ? 'Folder name:' : 'Имя папки:'
+    const placeholder = isEn ? 'e.g. src' : 'например: src'
+    const name = await showPromptModal(title, placeholder)
     if (!name) return
     Status.set('Создаю папку...', 'busy')
     const res = await API.createDir(rootPath, name)
