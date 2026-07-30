@@ -30,12 +30,13 @@ const Chat = (() => {
     document.getElementById('chipThink').classList.toggle('active', thinkEnabled)
     if (thinkEnabled) {
       localStorage.setItem('cakeai_deepthink', '1')
-      Status.set('DeepThink включён — AI будет размышлять', 'ok')
+      Status.set('⚠️ DeepThink (Рассуждение) включен! Внимание: расходует много токенов, но дает высокую точность и правильный код.', 'ok')
+      setTimeout(() => Status.set('Готов', 'ok'), 5000)
     } else {
       localStorage.removeItem('cakeai_deepthink')
       Status.set('DeepThink выключен', 'ok')
+      setTimeout(() => Status.set('Готов', 'ok'), 2000)
     }
-    setTimeout(() => Status.set('Готов', 'ok'), 2500)
   }
 
   function toggleWebSearch() {
@@ -267,6 +268,34 @@ const Chat = (() => {
       API.offStream()
       hideTyping()
 
+      // Слушатель источников поиска
+      if (!window._searchSourcesListener) {
+        window._searchSourcesListener = true
+        API.onSearchSources?.((sources) => {
+          if (!sources || sources.length === 0) return
+          window.lastSearchSources = sources
+
+          setTimeout(() => {
+            const lastBubble = document.querySelector('#chatMessages .msg:last-child .bubble')
+            if (lastBubble && !lastBubble.querySelector('.search-sources')) {
+              const sourcesDiv = document.createElement('div')
+              sourcesDiv.className = 'search-sources'
+              sourcesDiv.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;'
+              sourcesDiv.innerHTML = `
+                <div style="font-size:10px;color:var(--t2);margin-bottom:4px;">📚 Источники из интернета:</div>
+                ${sources.map(s => `
+                  <div style="margin:2px 0;">
+                    <a href="${s.url}" target="_blank" style="color:#7ee8a2;text-decoration:underline;">${s.title}</a>
+                    <div style="font-size:9px;color:#64748b;word-break:break-all;">${s.url}</div>
+                  </div>
+                `).join('')}
+              `
+              lastBubble.appendChild(sourcesDiv)
+            }
+          }, 300)
+        })
+      }
+
       if (err) {
         if (!streamBubble) appendMsg('ai', '⚠️ Ошибка: ' + err)
         else streamBubble.innerHTML = formatText('⚠️ Ошибка: ' + err)
@@ -296,29 +325,31 @@ const Chat = (() => {
         }
         messages.push({ role: 'assistant', content: streamText })
 
-        // ── Автопроверка кода ──
+        // ── Автопроверка кода и показ процесса в терминале/чате ──
         const lang = streamText.match(/```(\w+)/)?.[1]?.toLowerCase()
         const code = streamText.match(/```(?:\w+)?\n?([\s\S]*?)```/)?.[1]?.trim()
         const runnable = ['python','python3','js','javascript','node']
         if (lang && code && runnable.includes(lang)) {
-          Status.set('Проверяю код...', 'busy')
+          Status.set('Тестирую код в терминале...', 'busy')
+          Terminal.log(`\n[AI-TESTER] Запуск проверки кода (${lang})...`)
+          Terminal.log('--- Код от AI ---\n' + code + '\n-----------------')
+
           const key = localStorage.getItem('cakeai_key')
           const prov = localStorage.getItem('cakeai_provider') || null
           const model = prov ? (localStorage.getItem('cakeai_model_' + prov) || null) : null
           const res = await API.aiRunCheck({ code, lang, msgs: messages.slice(0,-1), key, provider: prov, model })
 
-          // Показываем результат проверки
+          // Показываем результат проверки в чате и логируем в консоль
           if (streamBubble) {
             const result = document.createElement('div')
             result.className = 'code-check-result'
 
             if (res.skipped) {
-              // Язык не поддерживается — ничего не показываем
               result.remove()
             } else if (res.ok && res.code === code) {
-              // Код работает
               result.className = 'code-check-result code-ok'
-              result.innerHTML = '<span class="check-icon">✅</span> Код проверен — работает корректно'
+              result.innerHTML = '<span class="check-icon">✅</span> Код проверен в терминале — работает корректно'
+              Terminal.log(`[AI-TESTER] ✅ Успешно! Вывод:\n${res.output || '(без вывода)'}`)
               if (res.output) {
                 const out = document.createElement('div')
                 out.className = 'code-output'
@@ -327,16 +358,16 @@ const Chat = (() => {
               }
               streamBubble.appendChild(result)
             } else if (res.ok && res.code !== code) {
-              // Код был исправлен
               result.className = 'code-check-result code-fixed'
-              result.innerHTML = '<span class="check-icon">🔧</span> Код исправлен и проверен — теперь работает'
+              result.innerHTML = '<span class="check-icon">🔧</span> Код исправлен ИИ и протестирован в терминале — теперь работает'
+              Terminal.log(`[AI-TESTER] 🔧 Код содержал ошибку, ИИ исправил его и успешно протестировал!\nНовый код:\n${res.code}`)
               const fixed = streamText.replace(/```(?:\w+)?\n?[\s\S]*?```/, '```' + lang + '\n' + res.code + '\n```')
               streamText = fixed
               messages[messages.length-1].content = fixed
               if (streamBubble) streamBubble.innerHTML = formatText(fixed)
               const result2 = document.createElement('div')
               result2.className = 'code-check-result code-fixed'
-              result2.innerHTML = '<span class="check-icon">🔧</span> Код исправлен и проверен — теперь работает'
+              result2.innerHTML = '<span class="check-icon">🔧</span> Код исправлен ИИ и протестирован в терминале — теперь работает'
               if (res.output) {
                 const out = document.createElement('div')
                 out.className = 'code-output'
@@ -345,15 +376,15 @@ const Chat = (() => {
               }
               streamBubble.appendChild(result2)
             } else if (!res.ok) {
-              // Код не работает
               result.className = 'code-check-result code-fail'
-              result.innerHTML = '<span class="check-icon">⚠️</span> Код может не работать: ' + (res.error || '').slice(0, 200)
+              result.innerHTML = '<span class="check-icon">⚠️</span> Ошибка тестирования в терминале: ' + (res.error || '').slice(0, 200)
+              Terminal.log(`[AI-TESTER] ⚠️ Ошибка выполнения: ${res.error}`)
               streamBubble.appendChild(result)
             }
           }
 
           Status.set('Готов', 'ok')
-        } else {
+        }
       }
 
       loading = false
