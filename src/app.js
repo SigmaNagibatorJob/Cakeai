@@ -11,6 +11,20 @@ const Status = {
 
 // ── Init ─────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
+  // restore saved background / RGB (применяем на ВСЁ приложение)
+  const savedBg = localStorage.getItem('cakeai_bg') || '#0d0f12'
+  if (typeof Settings !== 'undefined' && Settings.applyBackground) {
+    Settings.applyBackground(savedBg)
+  } else {
+    document.documentElement.style.setProperty('--bg0', savedBg)
+  }
+
+  // Применяем сохранённый язык
+  const savedLang = localStorage.getItem('cakeai_lang') || 'ru'
+  if (typeof Settings !== 'undefined' && Settings.applyLanguage) {
+    Settings.applyLanguage(savedLang)
+  }
+
   // restore saved key/provider
   const key  = localStorage.getItem('cakeai_key')
   const prov = localStorage.getItem('cakeai_provider')
@@ -22,6 +36,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   // init history
   await History.init()
 
+  // init terminal
+  Terminal.init()
+
   // BUGFIX: восстанавливаем сохранённую папку без диалога
   const savedFolder = localStorage.getItem('cakeai_folder')
   if (savedFolder) {
@@ -30,6 +47,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // BUGFIX: восстанавливаем состояние чипов DeepThink / Search
   Chat.restoreChips()
+
+  // Применяем язык интерфейса
+  if (typeof Settings !== 'undefined' && Settings.initLanguage) {
+    Settings.initLanguage()
+  } else if (typeof Settings !== 'undefined' && Settings.applyLanguage) {
+    const savedLang = localStorage.getItem('cakeai_lang') || 'ru'
+    Settings.applyLanguage(savedLang)
+  }
 
   // chat input auto-resize
   const inp = document.getElementById('chatInput')
