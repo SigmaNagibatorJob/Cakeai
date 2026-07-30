@@ -39,7 +39,7 @@
     <button class="open-folder-btn" onclick="Chat.newChat()">＋ Новый чат</button>
   </aside>
 
-  <!-- MIDDLE: tabs + editor/chat -->
+  <!-- MIDDLE: tabs + editor/chat/terminal -->
   <div class="workspace">
 
     <!-- Tab bar -->
@@ -60,19 +60,30 @@
       <textarea id="codeEditor" spellcheck="false"></textarea>
     </div>
 
+    <!-- Terminal -->
+    <div class="terminal-panel" id="terminalPanel" style="display:none">
+      <div class="terminal-toolbar">
+        <span>💻 Встроенный терминал / Автотесты AI</span>
+        <div class="terminal-actions">
+          <button class="e-btn" onclick="Terminal.clear()">Очистить</button>
+        </div>
+      </div>
+      <div class="terminal-output" id="terminalOutput">CakeAI Terminal v2.0 (Ready)
+Type commands or let AI test code automatically.
+</div>
+      <div class="terminal-input-row">
+        <span class="terminal-prompt">$</span>
+        <input type="text" id="terminalInput" class="terminal-input" placeholder="Введите команду (npm, python, node, git...)">
+      </div>
+    </div>
+
     <!-- Chat -->
     <div class="chat-panel" id="chatPanel">
       <div class="chat-messages" id="chatMessages">
-        <div class="welcome" id="welcomeScreen">
-          <div class="welcome-logo">Cake<em>AI</em></div>
-          <div class="welcome-sub">Открой папку проекта слева или задай вопрос прямо сейчас.</div>
-          <div class="chips">
-            <span class="chip gen" onclick="Chat.quick('Напиши autofarm для Roblox с TweenService и RemoteEvent')">Autofarm скрипт</span>
-            <span class="chip gen" onclick="Chat.quick('Как создать новую неделю в FNF Psych Engine?')">FNF неделя</span>
-            <span class="chip gen" onclick="Chat.quick('Напиши Telegram бота на aiogram 3.x')">Telegram bot</span>
-            <span class="chip gen" onclick="Chat.quick('Объясни открытый файл подробно')">Объясни файл</span>
+          <div class="welcome" id="welcomeScreen">
+            <div class="welcome-logo">Cake<em>AI</em></div>
+            <div class="welcome-sub">Открой папку проекта слева или задай вопрос прямо сейчас.</div>
           </div>
-        </div>
       </div>
 
       <div class="chat-input-area">
@@ -134,88 +145,128 @@
 
 <!-- SETTINGS MODAL -->
 <div class="modal-bg" id="settingsModal" style="display:none" onclick="Settings.onBgClick(event)">
-  <div class="modal">
+  <div class="modal modal-large">
     <div class="modal-head">
       <span>⚙ Настройки</span>
       <button onclick="Settings.close()">✕</button>
     </div>
-    <div class="modal-body">
-
-      <div class="setting-section">
-        <div class="setting-label">API Ключ</div>
-        <div class="key-row">
-          <input type="password" id="keyInput" placeholder="Вставь ключ сюда..." oninput="Settings.onKeyChange(this.value)">
-          <button class="apply-btn" onclick="Settings.applyKey()">Применить</button>
-        </div>
-        <div class="key-detected" id="keyDetected" style="display:none"></div>
-        <div class="key-unknown"  id="keyUnknown"  style="display:none">
-          ⚠️ Извиняюсь, я не знаю такого ключа.<br>
-          В будущем будет добавлена поддержка новых провайдеров.
-        </div>
+    <div class="settings-layout">
+      <!-- Навигация настроек -->
+      <div class="settings-sidebar">
+        <button class="settings-tab active" data-tab="providers" onclick="Settings.switchTab('providers')">🔌 Model Provider</button>
+        <button class="settings-tab"        data-tab="customization" onclick="Settings.switchTab('customization')">🎨 Кастомизация & RGB</button>
       </div>
+      <!-- Содержимое вкладок -->
+      <div class="modal-body settings-content">
 
-      <div class="setting-section">
-        <div class="setting-label">Системный промпт <span style="color:var(--t2);font-weight:400;font-size:11px">(добавляется поверх базового)</span></div>
-        <textarea id="systemPromptInput" placeholder="Например: Ты опытный Lua разработчик. Всегда пиши код с комментариями на русском." style="width:100%;height:72px;resize:vertical;background:var(--bg2);color:var(--t1);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:monospace;font-size:12px;box-sizing:border-box;outline:none;" oninput="Settings.saveSystemPrompt(this.value)"></textarea>
-        <div style="color:var(--t2);font-size:11px;margin-top:4px">Сохраняется автоматически</div>
-      </div>
+        <!-- Вкладка 1: Model Provider -->
+        <div class="settings-pane" id="pane-providers" style="display:flex;flex-direction:column;gap:20px;">
+          <div class="setting-section">
+            <div class="setting-label">API Ключ</div>
+            <div class="key-row">
+              <input type="password" id="keyInput" placeholder="Вставь ключ сюда..." oninput="Settings.onKeyChange(this.value)">
+              <button class="apply-btn" onclick="Settings.applyKey()">Применить</button>
+            </div>
+            <div class="key-detected" id="keyDetected" style="display:none"></div>
+            <div class="key-unknown"  id="keyUnknown"  style="display:none">
+              ⚠️ Извиняюсь, я не знаю такого ключа.<br>
+              В будущем будет добавлена поддержка новых провайдеров.
+            </div>
+          </div>
 
-      <div class="setting-section">
-        <div class="setting-label">Провайдер (определяется автоматически по ключу)</div>
-        <div class="providers">
-          <div class="provider-card" data-p="claude"   onclick="Settings.pickProvider('claude')">
-            <div class="provider-card-header">
-              <div class="p-name claude">Claude</div>
-              <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('claude', event)">⚙</button>
-            </div>
-            <div class="p-desc">Anthropic. Лучший для кода.</div>
-            <div class="p-model" data-p="claude"></div>
-            <div class="p-key">***-...</div>
-            <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://console.anthropic.com/settings/keys')">🔑 Получить ключ</div>
+          <div class="setting-section">
+            <div class="setting-label">Системный промпт <span style="color:var(--t2);font-weight:400;font-size:11px">(добавляется поверх базового)</span></div>
+            <textarea id="systemPromptInput" placeholder="Например: Ты опытный Lua разработчик. Всегда пиши код с комментариями на русском." style="width:100%;height:72px;resize:vertical;background:var(--bg2);color:var(--t1);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-family:monospace;font-size:12px;box-sizing:border-box;outline:none;" oninput="Settings.saveSystemPrompt(this.value)"></textarea>
+            <div style="color:var(--t2);font-size:11px;margin-top:4px">Сохраняется автоматически</div>
           </div>
-          <div class="provider-card" data-p="openai"   onclick="Settings.pickProvider('openai')">
-            <div class="provider-card-header">
-              <div class="p-name openai">ChatGPT</div>
-              <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('openai', event)">⚙</button>
+
+          <div class="setting-section">
+            <div class="setting-label">Провайдер (определяется автоматически по ключу)</div>
+            <div class="providers">
+              <div class="provider-card" data-p="claude"   onclick="Settings.pickProvider('claude')">
+                <div class="provider-card-header">
+                  <div class="p-name claude">Claude</div>
+                  <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('claude', event)">⚙</button>
+                </div>
+                <div class="p-desc">Anthropic. Лучший для кода.</div>
+                <div class="p-model" data-p="claude"></div>
+                <div class="p-key">***-...</div>
+                <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://console.anthropic.com/settings/keys')">🔑 Получить ключ</div>
+              </div>
+              <div class="provider-card" data-p="openai"   onclick="Settings.pickProvider('openai')">
+                <div class="provider-card-header">
+                  <div class="p-name openai">ChatGPT</div>
+                  <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('openai', event)">⚙</button>
+                </div>
+                <div class="p-desc">OpenAI GPT-5.5 / o3.</div>
+                <div class="p-model" data-p="openai"></div>
+                <div class="p-key">sk-proj-... (длинный)</div>
+                <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://platform.openai.com/api-keys')">🔑 Получить ключ</div>
+              </div>
+              <div class="provider-card" data-p="gemini"   onclick="Settings.pickProvider('gemini')">
+                <div class="provider-card-header">
+                  <div class="p-name gemini">Gemini</div>
+                  <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('gemini', event)">⚙</button>
+                </div>
+                <div class="p-desc">Google. Есть бесплатный тариф.</div>
+                <div class="p-model" data-p="gemini"></div>
+                <div class="p-key">AIzaSy...</div>
+                <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://aistudio.google.com/apikey')">🔑 Получить ключ</div>
+              </div>
+              <div class="provider-card" data-p="deepseek" onclick="Settings.pickProvider('deepseek')">
+                <div class="provider-card-header">
+                  <div class="p-name deepseek">DeepSeek</div>
+                  <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('deepseek', event)">⚙</button>
+                </div>
+                <div class="p-desc">V4 Pro / V4 Flash. Актуальные модели.</div>
+                <div class="p-model" data-p="deepseek"></div>
+                <div class="p-key">sk-... / dsk-...</div>
+                <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://platform.deepseek.com/api_keys')">🔑 Получить ключ</div>
+              </div>
+              <div class="provider-card" data-p="groq" onclick="Settings.pickProvider('groq')">
+                <div class="provider-card-header">
+                  <div class="p-name groq">Groq</div>
+                  <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('groq', event)">⚙</button>
+                </div>
+                <div class="p-desc">Бесплатный. Llama 4 / GPT-OSS / Qwen.</div>
+                <div class="p-model" data-p="groq"></div>
+                <div class="p-key">gsk_...</div>
+                <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://console.groq.com/keys')">🔑 Получить ключ</div>
+              </div>
             </div>
-            <div class="p-desc">OpenAI GPT-5.5 / o3.</div>
-            <div class="p-model" data-p="openai"></div>
-            <div class="p-key">sk-proj-... (длинный)</div>
-            <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://platform.openai.com/api-keys')">🔑 Получить ключ</div>
-          </div>
-          <div class="provider-card" data-p="gemini"   onclick="Settings.pickProvider('gemini')">
-            <div class="provider-card-header">
-              <div class="p-name gemini">Gemini</div>
-              <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('gemini', event)">⚙</button>
-            </div>
-            <div class="p-desc">Google. Есть бесплатный тариф.</div>
-            <div class="p-model" data-p="gemini"></div>
-            <div class="p-key">AIzaSy...</div>
-            <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://aistudio.google.com/apikey')">🔑 Получить ключ</div>
-          </div>
-          <div class="provider-card" data-p="deepseek" onclick="Settings.pickProvider('deepseek')">
-            <div class="provider-card-header">
-              <div class="p-name deepseek">DeepSeek</div>
-              <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('deepseek', event)">⚙</button>
-            </div>
-            <div class="p-desc">V4 Pro / V4 Flash. Хорош в коде.</div>
-            <div class="p-model" data-p="deepseek"></div>
-            <div class="p-key">sk-... (короткий) / dsk-...</div>
-            <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://platform.deepseek.com/api_keys')">🔑 Получить ключ</div>
-          </div>
-          <div class="provider-card" data-p="groq" onclick="Settings.pickProvider('groq')">
-            <div class="provider-card-header">
-              <div class="p-name groq">Groq</div>
-              <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('groq', event)">⚙</button>
-            </div>
-            <div class="p-desc">Бесплатный. Llama 4 / GPT-OSS / Qwen.</div>
-            <div class="p-model" data-p="groq"></div>
-            <div class="p-key">gsk_...</div>
-            <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://console.groq.com/keys')">🔑 Получить ключ</div>
           </div>
         </div>
-      </div>
 
+        <!-- Вкладка 2: Кастомизация & RGB (Фон, Язык и т.д.) -->
+        <div class="settings-pane" id="pane-customization" style="display:none;flex-direction:column;gap:20px;">
+          <div class="setting-section">
+            <div class="setting-label">Цвет фона приложения / RGB тема</div>
+            <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
+              <input type="color" id="bgColorPicker" value="#0d0f12" onchange="Settings.setBackground(this.value)" style="width:48px;height:36px;border:1px solid var(--border);border-radius:6px;background:none;cursor:pointer;">
+              <span style="font-size:13px;color:var(--t1)">Выберите цвет фона или настройте RGB оттенок под себя.</span>
+            </div>
+          </div>
+          <div class="setting-section">
+            <div class="setting-label">Быстрые пресеты темы</div>
+            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+              <button class="e-btn" onclick="Settings.setBackground('#0d0f12')">🌙 Темный (классика)</button>
+              <button class="e-btn" onclick="Settings.setBackground('#111827')">🌌 Глубокий синий</button>
+              <button class="e-btn" onclick="Settings.setBackground('#18181b')">🖤 Угольно-серый</button>
+              <button class="e-btn" onclick="Settings.setBackground('#1e1b4b')">🔮 RGB Фиолетовый</button>
+            </div>
+          </div>
+          <div class="setting-section">
+            <div class="setting-label">Язык интерфейса / Language</div>
+            <div style="margin-top:8px;">
+              <select id="langSelect" onchange="Settings.setLanguage(this.value)" style="width:100%;background:var(--bg2);color:var(--t0);border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-size:13px;outline:none;cursor:pointer;">
+                <option value="ru">🇷🇺 Русский</option>
+                <option value="en">🇬🇧 English</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+      </div>
     </div>
   </div>
 </div>
@@ -236,6 +287,7 @@
     <div class="search-tabs">
       <button class="search-tab active" data-tab="files"   onclick="Search.setTab('files')">📁 Файлы</button>
       <button class="search-tab"        data-tab="history" onclick="Search.setTab('history')">💬 История</button>
+      <button class="search-tab"        data-tab="web"     onclick="Search.setTab('web')">🌐 Веб-поиск</button>
       <button class="search-close" onclick="Search.close()">✕</button>
     </div>
     <div class="search-input-wrap">
@@ -254,7 +306,9 @@
 <script src="chat.js"></script>
 <script src="settings.js"></script>
 <script src="search.js"></script>
+<script src="terminal.js"></script>
+<script src="browserModal.js"></script>
 <script src="workspace.js"></script>
 <script src="app.js"></script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a22cd87e2e34e4c8',t:'MTc4NTMzNTY3OQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a2328b8109bc8989',t:'MTc4NTM5NTQ0MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
