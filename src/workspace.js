@@ -9,7 +9,7 @@ const Workspace = (() => {
     })
   }
 
-  // Удалено: showTerminal и terminalPanel (по просьбе пользователя)
+  // Удалено: showTerminal и terminalPanel
 
   function showFileTab(path) {
     document.getElementById('chatPanel').style.display   = 'none'
