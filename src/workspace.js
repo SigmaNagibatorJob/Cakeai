@@ -9,6 +9,8 @@ const Workspace = (() => {
     })
   }
 
+  // Удалено: showTerminal и terminalPanel (по просьбе пользователя)
+
   function showFileTab(path) {
     document.getElementById('chatPanel').style.display   = 'none'
     document.getElementById('editorPanel').style.display = 'flex'
@@ -33,13 +35,11 @@ const Workspace = (() => {
 
   function renderTabs() {
     const bar = document.getElementById('tabbar')
-    // keep chat tab
     bar.innerHTML = `<div class="tab active" id="tab-chat" onclick="Workspace.showChat()">💬 Чат</div>`
     openTabs.forEach(t => {
       const div = document.createElement('div')
       div.className = 'tab'
       div.dataset.path = t.path
-      // BUGFIX: экранируем путь для onclick
       div.innerHTML = `📄 ${esc(t.name)} <button class="tab-close" onclick="event.stopPropagation();Workspace.closeFileTab('${escAttr(t.path)}')">✕</button>`
       div.addEventListener('click', () => {
         Files.openFile(t.path, t.name)
