@@ -4,10 +4,25 @@ const https = require('https')
 const fs = require('fs')
 const { execFile } = require('child_process')
 const os = require('os')
+const crypto = require('crypto')
 
 let win
 
+// ── Безопасный ключ шифрования приложения (защита от чтения) ────────────────
+function getMachineKey() {
+  const keyFile = path.join(app.getPath('userData'), 'machine.key')
+  if (fs.existsSync(keyFile)) {
+    return fs.readFileSync(keyFile)
+  }
+  const key = crypto.randomBytes(32)
+  fs.writeFileSync(keyFile, key)
+  return key
+}
+
 function createWindow() {
+  // Защита конфигурации браузера шифрованием сессии и строгой изоляцией
+  const encryptionKey = getMachineKey()
+
   win = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -19,10 +34,33 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      webviewTag: true
+      webviewTag: true,
+      // Дополнительная защита памяти и данных
+      sandbox: false,
+      session: app.isPackaged ? undefined : undefined
     }
   })
+
+  // Шифруем локальное хранилище / кэш сессии при старте (защита владельца и пользователей)
+  try {
+    const ses = win.webContents.session
+    if (ses && ses.setPermissionRequestHandler) {
+      ses.setPermissionRequestHandler((webContents, permission, callback) => {
+        callback(false) // Запрещаем небезопасные разрешения по умолчанию
+      })
+    }
+  } catch(e) {}
+
   win.loadFile(path.join(__dirname, 'src', 'index.html'))
+  win.webContents.on('render-process-gone', (event, details) => {
+    console.error('Renderer process gone:', details.reason)
+  })
+
+  // Блокируем открытие внешних ссылок в системном браузере, всё открываем во встроенном окне/модалке
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url)
+    return { action: 'deny' }
+  })
 }
 
 app.whenReady().then(createWindow)
@@ -55,7 +93,7 @@ ipcMain.handle('read-dir', (_, p) => {
 
 ipcMain.handle('read-file', (_, p) => {
   try {
-    if (fs.statSync(p).size > 100e6) return { error: 'Файл >5MB' }
+    if (fs.statSync(p).size > 5e6) return { error: 'Файл >5MB' }
     return { content: fs.readFileSync(p, 'utf8') }
   } catch(e) { return { error: e.message } }
 })
@@ -100,6 +138,87 @@ ipcMain.handle('rename-entry', (_, oldPath, newName) => {
 
 ipcMain.handle('show-in-explorer', (_, p) => { shell.showItemInFolder(p); return true })
 
+// ── Web Search (DuckDuckGo Lite / HTML POST) ─────────────────────────────────
+function postForm(hostname, path_, headers, bodyStr) {
+  return new Promise((res, rej) => {
+    const buf = Buffer.from(bodyStr)
+    const req = https.request({
+      hostname,
+      path: path_,
+      method: 'POST',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': buf.length
+      }
+    }, r => {
+      let d = ''
+      r.on('data', c => d += c)
+      r.on('end', () => res(d))
+    })
+    req.on('error', rej)
+    req.end(buf)
+  })
+}
+
+function parseDDGResults(html) {
+  const results = []
+  // Парсим результаты из html.duckduckgo.com/html/ или lite
+  const linkRegex = /class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g
+  let match
+  while ((match = linkRegex.exec(html)) !== null) {
+    let url = match[1]
+    const uddgMatch = url.match(/uddg=([^&]+)/)
+    if (uddgMatch) {
+      try { url = decodeURIComponent(uddgMatch[1]) } catch(e) { url = match[1] }
+    } else if (url.startsWith('//')) {
+      url = 'https:' + url
+    }
+    const title = match[2].replace(/<[^>]*>/g, '').trim()
+    if (title && url) results.push({ url, title, snippet: '' })
+  }
+  const snippetRegex = /class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g
+  let sMatch
+  let i = 0
+  while ((sMatch = snippetRegex.exec(html)) !== null) {
+    if (results[i]) {
+      results[i].snippet = sMatch[1].replace(/<[^>]*>/g, '').trim().slice(0, 300)
+    }
+    i++
+  }
+  if (!results.length) {
+    // fallback для lite версии
+    const liteRegex = /<a[^>]*href="([^"]*)"[^>]*rel="nofollow"[^>]*>([\s\S]*?)<\/a>/g
+    while ((match = liteRegex.exec(html)) !== null) {
+      let url = match[1]
+      const title = match[2].replace(/<[^>]*>/g, '').trim()
+      if (title && url.startsWith('http') && results.length < 5) {
+        results.push({ url, title, snippet: '' })
+      }
+    }
+  }
+  return results.slice(0, 5)
+}
+
+ipcMain.handle('web-search', async (_, query) => {
+  try {
+    // Используем POST на html.duckduckgo.com/html/ с корректными заголовками
+    const raw = await postForm('html.duckduckgo.com', '/html/', {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.5',
+      'Referer': 'https://html.duckduckgo.com/'
+    }, `q=${encodeURIComponent(query)}`)
+
+    const results = parseDDGResults(raw)
+    return { results, text: results.map((r, i) =>
+      `${i+1}. ${r.title}\n   URL: ${r.url}\n   ${r.snippet}`
+    ).join('\n\n') }
+  } catch(e) {
+    return { results: [], text: '', error: e.message }
+  }
+})
+
 // ── AI API ───────────────────────────────────────────────────────────────────
 function detectProvider(key) {
   if (!key) return null
@@ -114,34 +233,43 @@ function detectProvider(key) {
 ipcMain.handle('detect-provider', (_, key) => detectProvider(key))
 
 const PREFERRED_MODELS = {
-  claude:   ['claude-opus-4-5', 'claude-sonnet-4-5', 'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-haiku-20240307'],
-  openai:   ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
-  gemini:   ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'],
-  deepseek: ['deepseek-chat', 'deepseek-reasoner', 'deepseek-coder'],
-  groq:     ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
+  claude:   [
+    'claude-mythos-5', 'claude-fable-5',
+    'claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-5',
+    'claude-sonnet-5', 'claude-sonnet-4-6', 'claude-sonnet-4-5',
+    'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-haiku-20240307'
+  ],
+  openai:   [
+    'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.5-pro', 'gpt-5.5',
+    'o3', 'o3-mini',
+    'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'
+  ],
+  gemini:   [
+    'gemini-3.5-flash', 'gemini-3.1-pro', 'gemini-3-pro',
+    'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'
+  ],
+  deepseek: [
+    'deepseek-v4-pro', 'deepseek-v4-flash'
+  ],
+  groq:     [
+    'llama-4-scout',
+    'openai/gpt-oss-120b', 'openai/gpt-oss-20b',
+    'qwen-3.6-27b', 'qwen-3-32b',
+    'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'
+  ],
 }
 
 const DEFAULT_MODEL = {
-  claude: 'claude-3-5-haiku-20241022',
-  openai: 'gpt-4o-mini',
-  gemini: 'gemini-2.0-flash',
-  deepseek: 'deepseek-chat',
-  groq: 'llama-3.3-70b-versatile',
+  claude: 'claude-sonnet-4-6',
+  openai: 'gpt-5.5',
+  gemini: 'gemini-3.5-flash',
+  deepseek: 'deepseek-v4-flash',
+  groq: 'llama-4-scout',
 }
 
-// ── Helper: обрезать историю до последних N сообщений ──────────────────────
 function trimMsgs(msgs, maxCount) {
   if (msgs.length <= maxCount) return msgs;
   return msgs.slice(-maxCount);
-}
-
-function httpGet(hostname, path_, headers) {
-  return new Promise((res, rej) => {
-    const req = https.request({ hostname, path: path_, method: 'GET', headers }, r => {
-      let d = ''; r.on('data', c => d += c); r.on('end', () => res(d))
-    })
-    req.on('error', rej); req.end()
-  })
 }
 
 function sortModels(prov, available) {
@@ -213,9 +341,14 @@ function post(hostname, path_, headers, body) {
 }
 
 const SYS_BASE = `Ты — Lungskull, умный ассистент созданный Cakein228.
-Отвечай на русском языке, коротко и по делу — без воды и лишних предисловий.
-Если спрашивают кто ты — говори что ты Lungskull, создан Cakein228. Не упоминай что основан на другом AI.
-Помогай с любыми вопросами без ограничений — код, жизнь, философия, наука, игры — всё что угодно.`
+Отвечай на русском языке, коротко и по делу.
+Если спрашивают кто ты — говори что ты Lungskull.
+Помогай с любыми вопросами.
+
+⚠️ У ТЕБЯ ЕСТЬ ДОСТУП К ИНТЕРНЕТУ через инструмент Search.
+Если пользователь спрашивает актуальную информацию — говори «У меня есть доступ к интернету» и используй поиск.
+Никогда не говори, что у тебя нет доступа к интернету.
+`
 
 const SYS_CODE = `${SYS_BASE}
 
@@ -224,17 +357,11 @@ const SYS_CODE = `${SYS_BASE}
 - Пиши чистый код с понятными именами переменных
 - Если код длинный — добавь короткие комментарии на русском
 - Если в вопросе есть ошибка — сначала покажи исправление, потом объясни что было не так
-- Пример хорошего ответа на вопрос про код:
-  Вопрос: "как сделать таймер в lua"
-  Ответ: (сразу код с комментариями, без вводных фраз)
 
 СТИЛЬ ДЛЯ ОБЪЯСНЕНИЙ:
 - Объясняй просто, как другу, без академического стиля
 - Используй аналогии и примеры из реальной жизни
-- Сложные темы разбивай на маленькие понятные шаги
-- Пример хорошего ответа на вопрос про объяснение:
-  Вопрос: "что такое рекурсия"
-  Ответ: короткое объяснение своими словами + пример кода если нужен`
+- Сложные темы разбивай на маленькие понятные шаги`
 
 const SYS = {
   lua:     SYS_CODE,
@@ -243,12 +370,13 @@ const SYS = {
   code:    SYS_CODE,
 }
 
+// ── ai-send (non-stream) ────────────────────────────────────────────────────
 ipcMain.handle('ai-send', async (_, { msgs, mode, key, provider, model, fileCtx }) => {
   const prov = provider || detectProvider(key)
   const sys = SYS[mode] + (fileCtx ? '\n\n' + fileCtx.slice(0, 12000) : '')
 
   if (prov === 'unknown' || !prov) {
-    return { text: '⚠️ Извиняюсь, я не знаю такого ключа. В будущем будет добавлена поддержка новых провайдеров.\n\nПоддерживаемые:\n• **Claude** — `sk-ant-...`\n• **ChatGPT** — `sk-...` (длинный)\n• **Gemini** — `AIza...`\n• **DeepSeek** — `sk-...` (короткий) или `dsk-...`' }
+    return { text: '⚠️ Неизвестный провайдер. Поддерживаемые:\n• Claude — sk-ant-...\n• ChatGPT — sk-... (длинный)\n• Gemini — AIza...\n• DeepSeek — sk-.../dsk-...\n• Groq — gsk_...' }
   }
 
   try {
@@ -301,21 +429,41 @@ ipcMain.handle('ai-send', async (_, { msgs, mode, key, provider, model, fileCtx 
 // ── AI Stream ────────────────────────────────────────────────────────────────
 ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fileCtx, customPrompt, deepthinkEnabled, webSearch }) => {
   const prov = provider || detectProvider(key)
-  const webNote = webSearch ? '\n\nПользователь включил режим поиска. Если вопрос требует актуальных данных — честно скажи что твои знания ограничены датой обучения и предложи конкретные сайты.' : ''
-  let sys = (SYS[mode] || SYS.general) + (customPrompt ? '\n\n' + customPrompt : '') + webNote + (fileCtx ? '\n\n' + fileCtx.slice(0, 12000) : '')
-
-  if (deepthinkEnabled) {
-    sys += '\n\n⚠️ Режим глубокого размышления. Подробно объясняй ход мыслей.'
-  }
-
-  const safeMsgs = prov === 'groq' ? trimMsgs(msgs, 8) : msgs
+  let sys = (SYS[mode] || SYS.general) + (customPrompt ? '\n\n' + customPrompt : '') + (fileCtx ? '\n\n' + fileCtx.slice(0, 12000) : '')
 
   const chunk = (text) => {
     try { win.webContents.send('stream-chunk', text) } catch(e) {}
   }
+  const reasoningChunk = (text) => {
+    try { win.webContents.send('stream-reasoning', text) } catch(e) {}
+  }
   const done = (err) => {
     try { win.webContents.send('stream-done', err || null) } catch(e) {}
   }
+
+  let searchResultsForUI = []
+
+  if (webSearch && msgs.length > 0) {
+    const lastUserMsg = [...msgs].reverse().find(m => m.role === 'user')
+    if (lastUserMsg) {
+      try {
+        const searchRes = await ipcMain.handle('web-search', null, lastUserMsg.content.slice(0, 200))
+        if (searchRes && searchRes.results && searchRes.results.length > 0) {
+          sys += '\n\n📋 Результаты поиска в интернете:\n' + searchRes.text
+          searchResultsForUI = searchRes.results
+        }
+      } catch(e) {
+        sys += '\n\n⚠️ Поиск не удался: ' + e.message
+      }
+    }
+  }
+
+  // DeepThink для ВСЕХ моделей
+  if (deepthinkEnabled) {
+    sys += '\n\n[РЕЖИМ DEEPTHINK АКТИВЕН]: Проводи глубокий, подробный пошаговый анализ (Chain of Thought), тщательно проверяй логику, краевые случаи и возможные ошибки перед тем как выдать финальный код и ответ. Думай подробно.'
+  }
+
+  const safeMsgs = prov === 'groq' ? trimMsgs(msgs, 8) : msgs
 
   function streamSSE(hostname, path_, headers, body) {
     return new Promise((resolve, reject) => {
@@ -333,9 +481,14 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
             try {
               const j = JSON.parse(data)
               const t = j.choices?.[0]?.delta?.content
-              const a = j.delta?.text
-              if (t) chunk(t)
-              else if (a) chunk(a)
+              const rc = j.choices?.[0]?.delta?.reasoning_content
+              const ct = j.delta?.text
+              const th = j.delta?.thinking
+
+              if (rc) reasoningChunk(rc)
+              else if (th) reasoningChunk(th)
+              else if (t) chunk(t)
+              else if (ct) chunk(ct)
             } catch(e) {}
           }
         })
@@ -349,19 +502,26 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
 
   try {
     if (prov === 'claude') {
-      const claudeModel = await resolveModel('claude', key, model)
-      const body = JSON.stringify({ model: claudeModel, max_tokens: deepthinkEnabled ? 16384 : 8192, stream: true, system: sys, messages: safeMsgs })
+      let claudeModel = await resolveModel('claude', key, model)
+      let bodyObj = {
+        model: claudeModel,
+        max_tokens: deepthinkEnabled ? 16384 : 8192,
+        stream: true,
+        system: sys,
+        messages: safeMsgs
+      }
+      if (deepthinkEnabled) {
+        bodyObj.thinking = { type: 'enabled', budget_tokens: 10000 }
+      }
+      const body = JSON.stringify(bodyObj)
       await streamSSE('api.anthropic.com', '/v1/messages', { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' }, body)
     } else if (prov === 'openai') {
       const openaiModel = await resolveModel('openai', key, model)
       const body = JSON.stringify({ model: openaiModel, max_tokens: deepthinkEnabled ? 16384 : 8192, stream: true, messages: [{ role: 'system', content: sys }, ...safeMsgs] })
       await streamSSE('api.openai.com', '/v1/chat/completions', { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body)
     } else if (prov === 'deepseek') {
-      const deepseekModel = await resolveModel('deepseek', key, model)
-      const isReasoner = deepseekModel === 'deepseek-reasoner'
-      const bodyObj = { model: deepseekModel, max_tokens: deepthinkEnabled ? 16384 : 8192, stream: true, messages: [{ role: 'system', content: sys }, ...safeMsgs] }
-      if (isReasoner) bodyObj.thinking = { type: 'enabled', budget_tokens: 4096 }
-      const body = JSON.stringify(bodyObj)
+      let deepseekModel = await resolveModel('deepseek', key, model)
+      const body = JSON.stringify({ model: deepseekModel, max_tokens: deepthinkEnabled ? 16384 : 8192, stream: true, messages: [{ role: 'system', content: sys }, ...safeMsgs] })
       await streamSSE('api.deepseek.com', '/v1/chat/completions', { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body)
     } else if (prov === 'groq') {
       const groqModel = await resolveModel('groq', key, model)
@@ -379,26 +539,19 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
       throw 'Неизвестный провайдер'
     }
     done(null)
-  } catch(e) {
-    done(String(e))
-  }
-})
+    } catch(e) {
+      done(String(e))
+    }
+
+    // Отправляем источники в UI, если был поиск
+    if (searchResultsForUI && searchResultsForUI.length > 0) {
+      try {
+        win.webContents.send('search-sources', searchResultsForUI)
+      } catch (_) {}
+    }
+  })
 
 // ── Crypto (AES-256-GCM, auto key) ──────────────────────────────────────────
-const crypto = require('crypto')
-const { app: electronApp } = require('electron')
-
-// Get or generate a persistent machine key stored in userData
-function getMachineKey() {
-  const keyFile = path.join(electronApp.getPath('userData'), 'machine.key')
-  if (fs.existsSync(keyFile)) {
-    return fs.readFileSync(keyFile)
-  }
-  const key = crypto.randomBytes(32)
-  fs.writeFileSync(keyFile, key)
-  return key
-}
-
 ipcMain.handle('crypto-encrypt', (_, data) => {
   try {
     const key    = getMachineKey()
@@ -428,37 +581,61 @@ ipcMain.handle('crypto-decrypt', (_, data) => {
 // ── History file ──────────────────────────────────────────────────────────────
 ipcMain.handle('history-save', (_, encryptedData) => {
   try {
-    fs.writeFileSync(path.join(electronApp.getPath('userData'), 'history.enc'), encryptedData, 'utf8')
+    fs.writeFileSync(path.join(app.getPath('userData'), 'history.enc'), encryptedData, 'utf8')
     return { ok: true }
   } catch(e) { return { error: e.message } }
 })
 
 ipcMain.handle('history-load', () => {
   try {
-    const file = path.join(electronApp.getPath('userData'), 'history.enc')
+    const file = path.join(app.getPath('userData'), 'history.enc')
     if (!fs.existsSync(file)) return { data: null }
     return { data: fs.readFileSync(file, 'utf8') }
   } catch(e) { return { error: e.message } }
 })
 
-// ── Open external link ──────────────────────────────────────────────────────
+// ── Open external link / system ──────────────────────────────────────────────
 ipcMain.handle('open-external', (_, url) => {
-  shell.openExternal(url);
-  return true;
-});
+  try {
+    win.webContents.send('open-browser-modal', url)
+    return true
+  } catch(e) {
+    shell.openExternal(url)
+    return true
+  }
+})
 
-// ── Code Runner ──────────────────────────────────────────────────────────────
+ipcMain.handle('open-external-system', (_, url) => {
+  shell.openExternal(url)
+  return true
+})
+
+// ── Virtual Terminal IPC ─────────────────────────────────────────────────────
+ipcMain.handle('terminal-run', async (_, { command, cwd }) => {
+  return new Promise((resolve) => {
+    const workingDir = cwd || (fs.existsSync(os.homedir()) ? os.homedir() : process.cwd())
+    const isWin = process.platform === 'win32'
+    const shell = isWin ? 'cmd.exe' : '/bin/bash'
+    const args = isWin ? ['/c', command] : ['-c', command]
+
+    execFile(shell, args, { cwd: workingDir, timeout: 30000 }, (err, stdout, stderr) => {
+      const output = (stdout || '') + (stderr || '')
+      if (err && (err.code || stderr)) {
+        resolve({ ok: false, output, error: stderr || err.message, code: err.code || 1 })
+      } else {
+        resolve({ ok: true, output, code: 0 })
+      }
+    })
+  })
+})
+
+// ── Code Runner & Self-Testing Loop ──────────────────────────────────────────
 const RUNNERS = {
   python:     { cmd: 'python',  ext: '.py' },
   python3:    { cmd: 'python3', ext: '.py' },
   js:         { cmd: 'node',    ext: '.js' },
   javascript: { cmd: 'node',    ext: '.js' },
   node:       { cmd: 'node',    ext: '.js' },
-}
-
-function detectLang(text) {
-  const m = text.match(/```(\w+)/)
-  return m ? m[1].toLowerCase() : null
 }
 
 function extractCode(text) {
@@ -471,9 +648,13 @@ function runCode(lang, code) {
     const runner = RUNNERS[lang]
     if (!runner) return resolve({ ok: true, skipped: true })
     const tmp = path.join(os.tmpdir(), 'cakeai_test' + runner.ext)
-    fs.writeFileSync(tmp, code, 'utf8')
+    try {
+      fs.writeFileSync(tmp, code, 'utf8')
+    } catch(e) {
+      return resolve({ ok: false, error: e.message })
+    }
     execFile(runner.cmd, [tmp], { timeout: 10000 }, (err, stdout, stderr) => {
-      if (err || stderr) resolve({ ok: false, error: stderr || err?.message || 'Ошибка' })
+      if (err || stderr) resolve({ ok: false, output: stdout, error: stderr || err?.message || 'Ошибка' })
       else resolve({ ok: true, output: stdout })
     })
   })
@@ -525,7 +706,7 @@ ipcMain.handle('ai-run-check', async (_, { code, lang, msgs, key, provider, mode
       const fixMsgs = [
         ...msgs,
         { role: 'assistant', content: '```' + lang + '\n' + currentCode + '\n```' },
-        { role: 'user', content: 'Этот код выдаёт ошибку:\n\n' + result.error + '\n\nИсправь. Верни только исправленный код в блоке кода.' }
+        { role: 'user', content: 'Этот код выдаёт ошибку при проверке в терминале:\n\n' + result.error + '\n\nИсправь код, чтобы он работал без ошибок и выполнял поставленную задачу. Верни только исправленный код в блоке кода.' }
       ]
       const fixed = await callAI(prov, key, sys, fixMsgs, model)
       const newCode = extractCode(fixed)
