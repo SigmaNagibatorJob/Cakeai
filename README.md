@@ -1,6 +1,3 @@
-
-
-```markdown
 # CakeAI
 
 [Permalink: CakeAI](https://github.com/SigmaNagibatorJob/Cakeai#cakeai)
@@ -106,41 +103,3 @@ git clone https://github.com/SigmaNagibatorJob/Cakeai.git
 cd Cakeai
 npm install
 npm start
-```
-
-* * *
-
-## Сборка
-
-[Permalink: Сборка](https://github.com/SigmaNagibatorJob/Cakeai#%D1%81%D0%B1%D0%BE%D1%80%D0%BA%D0%B0)
-
-```bash
-npm run build          # Установщик + portable
-npm run build-portable # Только portable
-```
-
-* * *
-
-## Планы на будущее
-
-[Permalink: Планы на будущее](https://github.com/SigmaNagibatorJob/Cakeai#%D0%BF%D0%BB%D0%B0%D0%BD%D1%8B-%D0%BD%D0%B0-%D0%B1%D1%83%D0%B4%D1%83%D1%89%D0%B5%D0%B5)
-
-- Полная локализация интерфейса
-- Встроенный браузер
-- Поддержка локальных моделей (Ollama)
-- Плагины и темы
-
-* * *
-
-## Лицензия
-
-[Permalink: Лицензия]([https://github.com/SigmaNagibatorJob/Cakeai#%D0%BB%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F](https://github.com/SigmaNagibatorJob/Cakeai?tab=MIT-1-ov-file))
-
-MIT License
-```
-
----
-
-Скопируй этот текст и замени им текущий `README.md` в репозитории.
-
-Хочешь, чтобы я ещё что-то подправил в этом варианте?
