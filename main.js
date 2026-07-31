@@ -227,36 +227,51 @@ function detectProvider(key) {
   if (key.startsWith('sk-') && key.length >= 48) return 'openai'
   if (key.startsWith('sk-') || key.startsWith('dsk-')) return 'deepseek'
   if (key.startsWith('gsk_')) return 'groq'
+  if (key.startsWith('sk-')) return 'kimi'          // Kimi (Moonshot)
   return 'unknown'
 }
 
 ipcMain.handle('detect-provider', (_, key) => detectProvider(key))
 
 const PREFERRED_MODELS = {
-  claude:   [
-    'claude-mythos-5', 'claude-fable-5',
-    'claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-5',
-    'claude-sonnet-5', 'claude-sonnet-4-6', 'claude-sonnet-4-5',
-    'claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-haiku-20240307'
+  claude: [
+    'claude-opus-5',
+    'claude-sonnet-5',
+    'claude-fable-5',
+    'claude-mythos-5',
+    'claude-opus-4.8',
+    'claude-sonnet-4.6'
   ],
-  openai:   [
-    'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.5-pro', 'gpt-5.5',
-    'o3', 'o3-mini',
-    'gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'
+  openai: [
+    'gpt-5.6-sol',
+    'gpt-5.6-terra',
+    'gpt-5.6-luna',
+    'gpt-5.5-pro',
+    'gpt-5.5',
+    'gpt-5.4-thinking',
+    'gpt-5.4-pro'
   ],
-  gemini:   [
-    'gemini-3.5-flash', 'gemini-3.1-pro', 'gemini-3-pro',
-    'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'
+  gemini: [
+    'gemini-3.6-flash',
+    'gemini-3.5-flash',
+    'gemini-3.1-pro'
   ],
   deepseek: [
-    'deepseek-v4-pro', 'deepseek-v4-flash'
+    'deepseek-v4-pro',
+    'deepseek-v4-flash',
+    'deepseek-r1'
   ],
-  groq:     [
+  groq: [
     'llama-4-scout',
-    'openai/gpt-oss-120b', 'openai/gpt-oss-20b',
-    'qwen-3.6-27b', 'qwen-3-32b',
-    'llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'
+    'openai/gpt-oss-120b',
+    'openai/gpt-oss-20b',
+    'qwen3-32b'
   ],
+  kimi: [
+    'moonshot-v1-128k',
+    'moonshot-v1-32k',
+    'kimi-latest'
+  ]
 }
 
 const DEFAULT_MODEL = {
@@ -265,6 +280,7 @@ const DEFAULT_MODEL = {
   gemini: 'gemini-3.5-flash',
   deepseek: 'deepseek-v4-flash',
   groq: 'llama-4-scout',
+  kimi: 'moonshot-v1-128k',
 }
 
 function trimMsgs(msgs, maxCount) {
@@ -376,7 +392,7 @@ ipcMain.handle('ai-send', async (_, { msgs, mode, key, provider, model, fileCtx 
   const sys = SYS[mode] + (fileCtx ? '\n\n' + fileCtx.slice(0, 12000) : '')
 
   if (prov === 'unknown' || !prov) {
-    return { text: '⚠️ Неизвестный провайдер. Поддерживаемые:\n• Claude — sk-ant-...\n• ChatGPT — sk-... (длинный)\n• Gemini — AIza...\n• DeepSeek — sk-.../dsk-...\n• Groq — gsk_...' }
+    return { text: '⚠️ Неизвестный провайдер. Поддерживаемые:\n• Claude — sk-ant-...\n• ChatGPT — sk-... (длинный)\n• Gemini — AIza...\n• DeepSeek — sk-.../dsk-...\n• Groq — gsk_...\n• Kimi — sk-...' }
   }
 
   try {
@@ -419,6 +435,14 @@ ipcMain.handle('ai-send', async (_, { msgs, mode, key, provider, model, fileCtx 
       const raw = await post('api.groq.com', '/openai/v1/chat/completions', { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body)
       const j = JSON.parse(raw)
       if (j.error) throw j.error.message || j.error
+      return { text: j.choices[0].message.content }
+    }
+    if (prov === 'kimi') {
+      const kimiModel = await resolveModel('kimi', key, model)
+      const body = JSON.stringify({ model: kimiModel, max_tokens: 8192, messages: [{ role: 'system', content: sys }, ...msgs] })
+      const raw = await post('api.moonshot.cn', '/v1/chat/completions', { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body)
+      const j = JSON.parse(raw)
+      if (j.error) throw j.error.message
       return { text: j.choices[0].message.content }
     }
   } catch(e) {
@@ -535,6 +559,10 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
       const j = JSON.parse(raw)
       if (j.error) throw j.error.message || j.error.status
       chunk(j.candidates[0].content.parts[0].text)
+    } else if (prov === 'kimi') {
+      const kimiModel = await resolveModel('kimi', key, model)
+      const body = JSON.stringify({ model: kimiModel, max_tokens: deepthinkEnabled ? 16384 : 8192, stream: true, messages: [{ role: 'system', content: sys }, ...safeMsgs] })
+      await streamSSE('api.moonshot.cn', '/v1/chat/completions', { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body)
     } else {
       throw 'Неизвестный провайдер'
     }
@@ -686,6 +714,13 @@ async function callAI(prov, key, sys, messages, model) {
     const groqModel = await resolveModel('groq', key, model)
     const body = JSON.stringify({ model: groqModel, max_tokens: 4096, messages: [{ role: 'system', content: sys }, ...messages] })
     const raw = await post('api.groq.com', '/openai/v1/chat/completions', { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body)
+    const j = JSON.parse(raw)
+    if (j.error) throw j.error.message
+    return j.choices[0].message.content
+  } else if (prov === 'kimi') {
+    const kimiModel = await resolveModel('kimi', key, model)
+    const body = JSON.stringify({ model: kimiModel, max_tokens: 8192, messages: [{ role: 'system', content: sys }, ...messages] })
+    const raw = await post('api.moonshot.cn', '/v1/chat/completions', { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body)
     const j = JSON.parse(raw)
     if (j.error) throw j.error.message
     return j.choices[0].message.content
