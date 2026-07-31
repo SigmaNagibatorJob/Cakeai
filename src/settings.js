@@ -1,6 +1,6 @@
 const Settings = (() => {
   const NAMES = {
-    claude: 'Claude', openai: 'ChatGPT', gemini: 'Gemini', deepseek: 'DeepSeek', groq: 'Groq'
+    claude: 'Claude', openai: 'ChatGPT', gemini: 'Gemini', deepseek: 'DeepSeek', groq: 'Groq', kimi: 'Kimi'
   }
 
   let pickerProvider = null
@@ -336,6 +336,9 @@ const Settings = (() => {
     tag.className = 'provider-tag ' + (p || '')
     tag.textContent = NAMES[p] || (p === 'unknown' ? '?' : 'Нет ключа')
   }
+
+  // Добавляем стиль для Kimi в CSS (если нужно)
+  // Можно добавить в style.css: .provider-tag.kimi { ... }
 
   function highlightCard(p) {
     document.querySelectorAll('.provider-card').forEach(c => {
