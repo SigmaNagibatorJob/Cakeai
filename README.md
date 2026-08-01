@@ -8,7 +8,7 @@
 
 Десктопное приложение на Electron. Чат со стримингом, DeepThink, веб-поиск, редактор кода и файловый менеджер — всё в одном окне.
 
-Поддержка Claude, ChatGPT, Gemini, DeepSeek и Groq.
+Поддержка Claude, ChatGPT, Gemini, DeepSeek, Groq и Kimi
 
 * * *
 
