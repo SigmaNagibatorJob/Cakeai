@@ -200,7 +200,7 @@ function parseDDGResults(html) {
   return results.slice(0, 5)
 }
 
-ipcMain.handle('web-search', async (_, query) => {
+async function doWebSearch(query) {
   try {
     // Используем POST на html.duckduckgo.com/html/ с корректными заголовками
     const raw = await postForm('html.duckduckgo.com', '/html/', {
@@ -217,13 +217,33 @@ ipcMain.handle('web-search', async (_, query) => {
   } catch(e) {
     return { results: [], text: '', error: e.message }
   }
-})
+}
+
+ipcMain.handle('web-search', (_, query) => doWebSearch(query))
 
 // ── AI API ───────────────────────────────────────────────────────────────────
+function httpGet(hostname, path_, headers) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname, path: path_, method: 'GET', headers }, res => {
+      let d = ''
+      res.on('data', c => d += c)
+      res.on('end', () => {
+        if (res.statusCode >= 400) return reject(new Error(`HTTP ${res.statusCode}: ${d.slice(0, 300)}`))
+        resolve(d)
+      })
+    })
+    req.on('error', reject)
+    req.setTimeout(20000, () => req.destroy(new Error('Таймаут запроса')))
+    req.end()
+  })
+}
+
 function detectProvider(key) {
   if (!key) return null
   if (key.startsWith('sk-ant-')) return 'claude'
   if (key.startsWith('AIza'))    return 'gemini'
+  // OpenRouter выдаёт ключи вида sk-or-v1-... — проверяем ДО остальных sk-*
+  if (key.startsWith('sk-or-')) return 'openrouter'
   if (key.startsWith('sk-') && key.length >= 48) return 'openai'
   if (key.startsWith('sk-') || key.startsWith('dsk-')) return 'deepseek'
   if (key.startsWith('gsk_')) return 'groq'
@@ -271,6 +291,22 @@ const PREFERRED_MODELS = {
     'moonshot-v1-128k',
     'moonshot-v1-32k',
     'kimi-latest'
+  ],
+  // OpenRouter: только бесплатные модели (:free / нулевая цена)
+  openrouter: [
+    'z-ai/glm-5.2:free',
+    'thinkingmachines/inkling:free',
+    'thinkingmachines/inkling-small:free',
+    'dots-studio/dots-3-note-preview:free',
+    'poolside/laguna-s-2.1:free',
+    'poolside/laguna-xs-2.1:free',
+    'nvidia/nemotron-3-ultra-550b-a55b:free',
+    'nvidia/nemotron-3-super-120b-a12b:free',
+    'nvidia/nemotron-3.5-lightning:free',
+    'google/gemma-4-31b-it:free',
+    'google/gemma-4-26b-a4b-it:free',
+    'cohere/north-mini-code:free',
+    'nvidia/nemotron-nano-9b-v2:free'
   ]
 }
 
@@ -281,6 +317,32 @@ const DEFAULT_MODEL = {
   deepseek: 'deepseek-v4-flash',
   groq: 'llama-4-scout',
   kimi: 'moonshot-v1-128k',
+  openrouter: 'z-ai/glm-5.2:free',
+}
+
+// ── OpenRouter: хост и заголовки ────────────────────────────────────────────
+const OPENROUTER_HOST = 'openrouter.ai'
+const OPENROUTER_PATH = '/api/v1/chat/completions'
+
+function openrouterHeaders(key) {
+  const h = {
+    'Content-Type': 'application/json',
+    // Необязательные заголовки для рейтингов OpenRouter
+    'HTTP-Referer': 'https://github.com/SigmaNagibatorJob/Cakeai',
+    'X-Title': 'CakeAI (Lungskull)'
+  }
+  // Пустой Bearer вызывает 401 — список моделей публичный, шлём заголовок только с ключом
+  if (key) h['Authorization'] = 'Bearer ' + key
+  return h
+}
+
+// Бесплатная ли модель: id заканчивается на :free либо цена нулевая
+function isFreeModel(m) {
+  if (!m) return false
+  if (typeof m.id === 'string' && m.id.endsWith(':free')) return true
+  const p = m.pricing || {}
+  const num = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0 }
+  return num(p.prompt) === 0 && num(p.completion) === 0
 }
 
 function trimMsgs(msgs, maxCount) {
@@ -298,7 +360,8 @@ function sortModels(prov, available) {
 
 async function fetchAvailableModels(prov, key) {
   const fallback = PREFERRED_MODELS[prov] || []
-  if (!key) return { models: fallback, fromApi: false }
+  // У OpenRouter список моделей публичный — грузим даже без ключа
+  if (!key && prov !== 'openrouter') return { models: fallback, fromApi: false }
 
   try {
     let available = []
@@ -319,6 +382,16 @@ async function fetchAvailableModels(prov, key) {
     } else if (prov === 'groq') {
       const raw = await httpGet('api.groq.com', '/openai/v1/models', { 'Authorization': 'Bearer ' + key })
       available = (JSON.parse(raw).data || []).map(m => m.id)
+    } else if (prov === 'openrouter') {
+      // Берём только бесплатные модели. max_price=0 фильтрует на стороне OpenRouter,
+      // плюс дополнительно фильтруем сами — на случай изменений API.
+      const raw = await httpGet(OPENROUTER_HOST, '/api/v1/models?max_price=0', openrouterHeaders(key))
+      available = (JSON.parse(raw).data || [])
+        .filter(isFreeModel)
+        // только текстовый вывод — отсекаем image/audio-модели
+        .filter(m => !m.architecture?.output_modalities || m.architecture.output_modalities.includes('text'))
+        .filter(m => !(m.architecture?.output_modalities || []).some(o => o === 'audio' || o === 'image'))
+        .map(m => m.id)
     }
     const sorted = sortModels(prov, available)
     return { models: sorted.length ? sorted : fallback, fromApi: sorted.length > 0 }
@@ -392,7 +465,7 @@ ipcMain.handle('ai-send', async (_, { msgs, mode, key, provider, model, fileCtx 
   const sys = SYS[mode] + (fileCtx ? '\n\n' + fileCtx.slice(0, 12000) : '')
 
   if (prov === 'unknown' || !prov) {
-    return { text: '⚠️ Неизвестный провайдер. Поддерживаемые:\n• Claude — sk-ant-...\n• ChatGPT — sk-... (длинный)\n• Gemini — AIza...\n• DeepSeek — sk-.../dsk-...\n• Groq — gsk_...\n• Kimi — sk-...' }
+    return { text: '⚠️ Неизвестный провайдер. Поддерживаемые:\n• Claude — sk-ant-...\n• ChatGPT — sk-... (длинный)\n• Gemini — AIza...\n• DeepSeek — sk-.../dsk-...\n• Groq — gsk_...\n• Kimi — sk-...\n• OpenRouter — sk-or-v1-... (бесплатные модели)' }
   }
 
   try {
@@ -445,6 +518,14 @@ ipcMain.handle('ai-send', async (_, { msgs, mode, key, provider, model, fileCtx 
       if (j.error) throw j.error.message
       return { text: j.choices[0].message.content }
     }
+    if (prov === 'openrouter') {
+      const orModel = await resolveModel('openrouter', key, model)
+      const body = JSON.stringify({ model: orModel, max_tokens: 8192, messages: [{ role: 'system', content: sys }, ...msgs] })
+      const raw = await post(OPENROUTER_HOST, OPENROUTER_PATH, openrouterHeaders(key), body)
+      const j = JSON.parse(raw)
+      if (j.error) throw j.error.message || j.error
+      return { text: j.choices[0].message.content }
+    }
   } catch(e) {
     throw String(e)
   }
@@ -471,7 +552,7 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
     const lastUserMsg = [...msgs].reverse().find(m => m.role === 'user')
     if (lastUserMsg) {
       try {
-        const searchRes = await ipcMain.handle('web-search', null, lastUserMsg.content.slice(0, 200))
+        const searchRes = await doWebSearch(lastUserMsg.content.slice(0, 200))
         if (searchRes && searchRes.results && searchRes.results.length > 0) {
           sys += '\n\n📋 Результаты поиска в интернете:\n' + searchRes.text
           searchResultsForUI = searchRes.results
@@ -489,11 +570,29 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
 
   const safeMsgs = prov === 'groq' ? trimMsgs(msgs, 8) : msgs
 
+  let streamError = null
+
   function streamSSE(hostname, path_, headers, body) {
     return new Promise((resolve, reject) => {
       const buf = Buffer.from(body)
       const req = https.request({ hostname, path: path_, method: 'POST', headers: { ...headers, 'Content-Length': buf.length } }, res => {
         let buffer = ''
+        // Не-SSE ответ (например 401/429) — собираем тело и отдаём как ошибку
+        const isSSE = (res.headers['content-type'] || '').includes('text/event-stream')
+        if (!isSSE) {
+          let errBody = ''
+          res.on('data', c => errBody += c)
+          res.on('end', () => {
+            let msg = errBody.slice(0, 500)
+            try {
+              const j = JSON.parse(errBody)
+              msg = j.error?.message || j.error || msg
+            } catch(e) {}
+            reject(new Error(`HTTP ${res.statusCode}: ${msg}`))
+          })
+          res.on('error', reject)
+          return
+        }
         res.on('data', raw => {
           buffer += raw.toString()
           const lines = buffer.split('\n')
@@ -504,8 +603,14 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
             if (data === '[DONE]') continue
             try {
               const j = JSON.parse(data)
+              // Ошибка API приходит прямо в потоке (OpenRouter, OpenAI-совместимые)
+              if (j.error) {
+                streamError = j.error.message || JSON.stringify(j.error)
+                continue
+              }
               const t = j.choices?.[0]?.delta?.content
-              const rc = j.choices?.[0]?.delta?.reasoning_content
+              // reasoning_content — DeepSeek, reasoning — OpenRouter
+              const rc = j.choices?.[0]?.delta?.reasoning_content || j.choices?.[0]?.delta?.reasoning
               const ct = j.delta?.text
               const th = j.delta?.thinking
 
@@ -563,12 +668,23 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
       const kimiModel = await resolveModel('kimi', key, model)
       const body = JSON.stringify({ model: kimiModel, max_tokens: deepthinkEnabled ? 16384 : 8192, stream: true, messages: [{ role: 'system', content: sys }, ...safeMsgs] })
       await streamSSE('api.moonshot.cn', '/v1/chat/completions', { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body)
+    } else if (prov === 'openrouter') {
+      const orModel = await resolveModel('openrouter', key, model)
+      const bodyObj = {
+        model: orModel,
+        max_tokens: deepthinkEnabled ? 16384 : 8192,
+        stream: true,
+        messages: [{ role: 'system', content: sys }, ...safeMsgs]
+      }
+      // DeepThink: просим модель вернуть рассуждения, если она их поддерживает
+      if (deepthinkEnabled) bodyObj.reasoning = { effort: 'high' }
+      await streamSSE(OPENROUTER_HOST, OPENROUTER_PATH, openrouterHeaders(key), JSON.stringify(bodyObj))
     } else {
       throw 'Неизвестный провайдер'
     }
-    done(null)
+    done(streamError)
     } catch(e) {
-      done(String(e))
+      done(e && e.message ? e.message : String(e))
     }
 
     // Отправляем источники в UI, если был поиск
@@ -723,6 +839,13 @@ async function callAI(prov, key, sys, messages, model) {
     const raw = await post('api.moonshot.cn', '/v1/chat/completions', { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body)
     const j = JSON.parse(raw)
     if (j.error) throw j.error.message
+    return j.choices[0].message.content
+  } else if (prov === 'openrouter') {
+    const orModel = await resolveModel('openrouter', key, model)
+    const body = JSON.stringify({ model: orModel, max_tokens: 8192, messages: [{ role: 'system', content: sys }, ...messages] })
+    const raw = await post(OPENROUTER_HOST, OPENROUTER_PATH, openrouterHeaders(key), body)
+    const j = JSON.parse(raw)
+    if (j.error) throw j.error.message || j.error
     return j.choices[0].message.content
   }
   throw 'Провайдер не поддерживается'

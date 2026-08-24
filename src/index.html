@@ -244,6 +244,17 @@ Type commands or let AI test code automatically.
                 <div class="p-key">sk-...</div>
                 <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://platform.moonshot.cn/console/api-keys')">🔑 Получить ключ</div>
               </div>
+
+              <div class="provider-card" data-p="openrouter" onclick="Settings.pickProvider('openrouter')">
+                <div class="provider-card-header">
+                  <div class="p-name openrouter">OpenRouter <span class="p-badge-free">FREE</span></div>
+                  <button class="provider-gear" title="Выбрать модель" onclick="event.stopPropagation();Settings.openModelPicker('openrouter', event)">⚙</button>
+                </div>
+                <div class="p-desc">Только бесплатные модели: GLM, Gemma, Nemotron, Inkling и др.</div>
+                <div class="p-model" data-p="openrouter"></div>
+                <div class="p-key">sk-or-v1-...</div>
+                <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://openrouter.ai/settings/keys')">🔑 Получить ключ</div>
+              </div>
             </div>
           </div>
         </div>

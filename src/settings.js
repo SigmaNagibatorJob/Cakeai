@@ -1,6 +1,7 @@
 const Settings = (() => {
   const NAMES = {
-    claude: 'Claude', openai: 'ChatGPT', gemini: 'Gemini', deepseek: 'DeepSeek', groq: 'Groq', kimi: 'Kimi'
+    claude: 'Claude', openai: 'ChatGPT', gemini: 'Gemini', deepseek: 'DeepSeek',
+    groq: 'Groq', kimi: 'Kimi', openrouter: 'OpenRouter'
   }
 
   let pickerProvider = null
@@ -279,7 +280,7 @@ const Settings = (() => {
     updateModelLabels()
     if (pickerProvider === provider) {
       document.querySelectorAll('#modelPickerList .model-item').forEach(el => {
-        el.classList.toggle('active', el.textContent === modelId)
+        el.classList.toggle('active', el.dataset.model === modelId)
       })
     }
   }
@@ -315,14 +316,29 @@ const Settings = (() => {
       for (const m of result.models) {
         const item = document.createElement('div')
         item.className = 'model-item' + (m === selected ? ' active' : '')
+        item.dataset.model = m
+        item.title = m
         item.textContent = m
+        // У OpenRouter показываем метку FREE — все модели в списке бесплатные
+        if (provider === 'openrouter') {
+          const tag = document.createElement('span')
+          tag.className = 'model-free-tag'
+          tag.textContent = 'FREE'
+          item.appendChild(tag)
+        }
         item.onclick = (e) => { e.stopPropagation(); pickModel(provider, m) }
         list.appendChild(item)
       }
     }
-    hint.textContent = result.fromApi
-      ? '✓ Список получен с API'
-      : 'Стандартный список (вставь ключ для актуальных моделей)'
+    if (provider === 'openrouter') {
+      hint.textContent = result.fromApi
+        ? `✓ ${result.models.length} бесплатных моделей с API OpenRouter`
+        : 'Стандартный список бесплатных моделей (нет сети?)'
+    } else {
+      hint.textContent = result.fromApi
+        ? '✓ Список получен с API'
+        : 'Стандартный список (вставь ключ для актуальных моделей)'
+    }
   }
 
   function closeModelPicker() {
@@ -368,6 +384,6 @@ const Settings = (() => {
     closeModelPicker()
   })
 
-  return { open, close, switchTab, onBgClick, onKeyChange, applyKey, pickProvider, openModelPicker, closeModelPicker, updateProviderTag, updateCards, saveSystemPrompt, setBackground, setLanguage }
+  return { open, close, switchTab, onBgClick, onKeyChange, applyKey, pickProvider, openModelPicker, closeModelPicker, updateProviderTag, updateCards, saveSystemPrompt, setBackground, setLanguage, applyLanguage, initLanguage }
 })()
 window.Settings = Settings

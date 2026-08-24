@@ -8,7 +8,22 @@
 
 Десктопное приложение на Electron. Чат со стримингом, DeepThink, веб-поиск, редактор кода и файловый менеджер — всё в одном окне.
 
-Поддержка Claude, ChatGPT, Gemini, DeepSeek, Groq и Kimi
+Поддержка Claude, ChatGPT, Gemini, DeepSeek, Groq, Kimi и OpenRouter (бесплатные модели)
+
+### OpenRouter — бесплатные модели
+
+В настройках выбери карточку **OpenRouter** и вставь ключ вида `sk-or-v1-...`
+([получить бесплатно](https://openrouter.ai/settings/keys)).
+
+- В списке моделей показываются **только бесплатные** — платные отфильтрованы,
+  так что случайно потратить деньги нельзя
+- Список подтягивается прямо с API OpenRouter, поэтому всегда актуален
+  (работает даже без ключа — можно посмотреть модели заранее)
+- Доступны GLM 5.2, Gemma 4, Nemotron, Inkling, Laguna и другие
+- Работают стриминг, DeepThink (через `reasoning`) и веб-поиск
+
+Проверить интеграцию: `node test-openrouter.js`
+(с реальным запросом к модели — `OPENROUTER_API_KEY=sk-or-v1-... node test-openrouter.js`)
 
 * * *
 

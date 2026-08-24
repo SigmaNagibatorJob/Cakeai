@@ -23,9 +23,16 @@ contextBridge.exposeInMainWorld('API', {
   aiSend:         (data) => ipcRenderer.invoke('ai-send', data),
   aiStream:       (data) => ipcRenderer.invoke('ai-stream', data),
   aiRunCheck:     (data) => ipcRenderer.invoke('ai-run-check', data),
-  onStreamChunk:  (cb)   => ipcRenderer.on('stream-chunk', (_, t) => cb(t)),
-  onStreamDone:   (cb)   => ipcRenderer.on('stream-done',  (_, e) => cb(e)),
-  offStream:      ()     => { ipcRenderer.removeAllListeners('stream-chunk'); ipcRenderer.removeAllListeners('stream-done') },
+  webSearch:      (q)    => ipcRenderer.invoke('web-search', q),
+  onStreamChunk:     (cb) => ipcRenderer.on('stream-chunk',     (_, t) => cb(t)),
+  onStreamReasoning: (cb) => ipcRenderer.on('stream-reasoning', (_, t) => cb(t)),
+  onStreamDone:      (cb) => ipcRenderer.on('stream-done',      (_, e) => cb(e)),
+  onSearchSources:   (cb) => ipcRenderer.on('search-sources',   (_, s) => cb(s)),
+  offStream:      ()     => {
+    ipcRenderer.removeAllListeners('stream-chunk')
+    ipcRenderer.removeAllListeners('stream-reasoning')
+    ipcRenderer.removeAllListeners('stream-done')
+  },
   getAssetPath:   (file) => require('path').join(__dirname, 'assets', file),
 
   // crypto + history
