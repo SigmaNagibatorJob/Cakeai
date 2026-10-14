@@ -491,7 +491,7 @@ ipcMain.handle('ai-send', async (_, { msgs, mode, key, provider, model, fileCtx 
     }
     if (prov === 'openai') {
       const openaiModel = await resolveModel('openai', key, model)
-      const body = JSON.stringify({ model: openaiModel, max_tokens: 8192, messages: [{ role: 'system', content: sys }, ...msgs] })
+      const body = JSON.stringify({ model: openaiModel, max_completion_tokens: 8192, messages: [{ role: 'system', content: sys }, ...msgs] })
       const raw = await post('api.openai.com', '/v1/chat/completions', { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body)
       const j = JSON.parse(raw)
       if (j.error) throw j.error.message
