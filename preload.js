@@ -22,17 +22,27 @@ contextBridge.exposeInMainWorld('API', {
   listModels:     (data) => ipcRenderer.invoke('list-models', data),
   aiSend:         (data) => ipcRenderer.invoke('ai-send', data),
   aiStream:       (data) => ipcRenderer.invoke('ai-stream', data),
+  aiStop:         ()     => ipcRenderer.invoke('ai-stop'),
   aiRunCheck:     (data) => ipcRenderer.invoke('ai-run-check', data),
-  onStreamChunk:  (cb)   => ipcRenderer.on('stream-chunk', (_, t) => cb(t)),
-  onStreamDone:   (cb)   => ipcRenderer.on('stream-done',  (_, e) => cb(e)),
-  offStream:      ()     => { ipcRenderer.removeAllListeners('stream-chunk'); ipcRenderer.removeAllListeners('stream-done') },
-  getAssetPath:   (file) => require('path').join(__dirname, 'assets', file),
+
+  onStreamChunk:     (cb) => ipcRenderer.on('stream-chunk',     (_, t) => cb(t)),
+  onStreamReasoning: (cb) => ipcRenderer.on('stream-reasoning', (_, t) => cb(t)),
+  onStreamDone:      (cb) => ipcRenderer.on('stream-done',      (_, e) => cb(e)),
+  onSearchSources:   (cb) => ipcRenderer.on('search-sources',   (_, s) => cb(s)),
+  offStream: () => {
+    ['stream-chunk', 'stream-reasoning', 'stream-done', 'search-sources']
+      .forEach(ch => ipcRenderer.removeAllListeners(ch))
+  },
+  getAssetPath: (file) => require('path').join(__dirname, 'assets', file),
+
+  // terminal
+  terminalRun: (data) => ipcRenderer.invoke('terminal-run', data),
 
   // crypto + history
   encrypt:      (data) => ipcRenderer.invoke('crypto-encrypt', data),
   decrypt:      (data) => ipcRenderer.invoke('crypto-decrypt', data),
-  historySave:  (enc)            => ipcRenderer.invoke('history-save', enc),
-  historyLoad:  ()               => ipcRenderer.invoke('history-load'),
+  historySave:  (enc)  => ipcRenderer.invoke('history-save', enc),
+  historyLoad:  ()     => ipcRenderer.invoke('history-load'),
 
   // external links
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
