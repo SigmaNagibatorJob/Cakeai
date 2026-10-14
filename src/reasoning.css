@@ -1,0 +1,124 @@
+/* ── Служебное ── */
+[hidden] { display: none !important; }
+
+/* ── Блок размышлений (над ответом, в том же сообщении) ── */
+.think-block {
+  display: block;
+  margin: 2px 0 6px;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--border);
+  color: var(--t2);
+  font-size: 12px;
+}
+.think-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--t2);
+  font-size: 11px;
+  padding: 2px 0;
+  opacity: .85;
+}
+.think-head:hover { opacity: 1; color: var(--t1); }
+.think-icon { font-size: 12px; }
+.think-arrow { font-size: 10px; transition: transform .15s; }
+.think-block.collapsed .think-arrow { transform: rotate(-90deg); }
+.think-block.thinking .think-title { animation: pulse 1.4s infinite; }
+
+.think-body {
+  margin-top: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  color: var(--t2);
+  opacity: .8;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+.think-block.collapsed .think-body { display: none; }
+
+/* ── Markdown внутри сообщений ── */
+.bubble.md { white-space: normal; }
+.bubble.md > :first-child { margin-top: 0; }
+.bubble.md > :last-child { margin-bottom: 0; }
+.bubble.md p { margin: 0 0 8px; }
+.bubble.md h1, .bubble.md h2, .bubble.md h3,
+.bubble.md h4, .bubble.md h5, .bubble.md h6 {
+  margin: 12px 0 6px;
+  line-height: 1.3;
+  color: var(--t0);
+}
+.bubble.md h1 { font-size: 18px; }
+.bubble.md h2 { font-size: 16px; }
+.bubble.md h3 { font-size: 14px; }
+.bubble.md h4, .bubble.md h5, .bubble.md h6 { font-size: 13px; }
+.bubble.md ul, .bubble.md ol { margin: 4px 0 8px; padding-left: 22px; }
+.bubble.md li { margin: 2px 0; }
+.bubble.md li > ul, .bubble.md li > ol { margin: 2px 0; }
+.bubble.md blockquote {
+  margin: 6px 0;
+  padding: 2px 10px;
+  border-left: 3px solid var(--border);
+  color: var(--t1);
+}
+.bubble.md hr { border: none; border-top: 1px solid var(--border); margin: 10px 0; }
+.bubble.md a { color: var(--accent); text-decoration: underline; cursor: pointer; }
+.bubble.md del { opacity: .7; }
+.bubble.md code {
+  font-family: 'Consolas', 'Courier New', monospace;
+  background: var(--bg3);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.bubble.md pre code { background: none; padding: 0; display: block; }
+.code-lang {
+  position: absolute;
+  top: 8px;
+  left: 12px;
+  font-size: 10px;
+  color: var(--t2);
+  font-family: 'Consolas', monospace;
+  text-transform: lowercase;
+}
+.md-table { overflow-x: auto; margin: 6px 0 10px; }
+.md-table table { border-collapse: collapse; font-size: 12px; }
+.md-table th, .md-table td {
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  text-align: left;
+}
+.md-table th { background: var(--bg3); }
+
+/* ── Кнопки под сообщением ── */
+.msg-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+  opacity: .45;
+  transition: opacity .15s;
+}
+.msg:hover .msg-tools { opacity: 1; }
+.tool-btn {
+  font-size: 11px;
+  padding: 2px 9px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--t2);
+}
+.tool-btn:hover { color: var(--t0); background: var(--bg3); }
+.tool-btn:disabled { opacity: .5; cursor: default; }
+
+.err-line { margin-top: 6px; color: var(--red); }
+.stopped-line { margin-top: 6px; color: var(--t2); font-size: 11px; }
+.msg .search-sources { margin-top: 6px; }
+
+/* ── Кнопка «Стоп» ── */
+.send-btn.stop { background: var(--red); color: #fff; }
+.send-btn.stop:hover { background: #ef4444; }
