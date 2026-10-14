@@ -228,8 +228,7 @@ const Chat = (() => {
   }
 
   function restoreChips() {
-    $('chipThink').classList.toggle('active', thinkEnabled)
-    $('chipSearch').classList.toggle('active', webSearchEnabled)
+    $('chipThink')?.classList.toggle('active', thinkEnabled)
   }
 
   // ── Контекст файла ─────────────────────────────────────────────────────────
@@ -398,8 +397,27 @@ const Chat = (() => {
   let autotestEnabled = localStorage.getItem('cakeai_autotest') !== '0'
 
   function canAutoRun(text) {
+    const request = [...messages].reverse()
+      .find(m => m.role === 'user')?.content || ''
+
+    // Не запускаем примеры из новостей и пояснений.
+    const asksForCode =
+      /(напиши|создай|реализуй|исправь|протестируй|проверь|запусти|write|implement|fix|test|run)/i.test(request) &&
+      /(код|скрипт|функци|алгоритм|программ|python|javascript|code|script|function|algorithm)/i.test(request)
+
+    const forbidsRun =
+      /не\s+(?:запускай|выполняй|тестируй)|без\s+(?:запуска|выполнения)|do not run|don't run/i.test(request)
+
+    if (!asksForCode || forbidsRun) return false
+
     const m = findRunnable(text)
-    return !!m && !RISKY_RE.test(m.code) && !INTERACTIVE_RE.test(m.code)
+    if (!m || RISKY_RE.test(m.code) || INTERACTIVE_RE.test(m.code)) return false
+
+    // Такие примеры требуют окружения, зависимостей или ключей.
+    const needsSetup =
+      /\b(import|require|fetch|XMLHttpRequest|document|window|process|open)\b|api[_-]?key|YOUR_|https?:\/\//i
+
+    return !needsSetup.test(m.code)
   }
 
   function toggleAutotest() {
@@ -818,7 +836,23 @@ const Chat = (() => {
         fileCtx,
         customPrompt: customPrompt || undefined,
         deepthinkEnabled: localStorage.getItem('cakeai_deepthink') === '1',
-        webSearch: localStorage.getItem('cakeai_websearch') === '1'
+        webSearch: (() => {
+          const question = lastUser?.content || ''
+          if (/не ищи|без поиска|без интернета|don't search|do not search/i.test(question)) {
+            return false
+          }
+
+            const fresh = /новост|актуальн|свеж|сегодня|сейчас|последн.{0,20}(верси|релиз|обновлен)|что нового|погод|курс валют|найди|поищи|latest|news|current|search/i
+            if (fresh.test(question)) return true
+
+           // Учитываем предыдущий вопрос для короткого уточнения.
+          if (question.length < 100 && /^(а |и |подробнее|когда именно|what about|and )/i.test(question)) {
+            const users = messages.filter(m => m.role === 'user')
+            return fresh.test(users[users.length - 2]?.content || '')
+          }
+
+          return false
+        })()
       })
       // страховка: если событие завершения почему-то не пришло
       setTimeout(() => { if (!finished && runId === currentRun) finish(null) }, 1500)
@@ -837,16 +871,6 @@ const Chat = (() => {
     container.addEventListener('click', onChatClick)
     const sb = $('sendBtn')
     if (sb) sb.onclick = () => (loading ? stop() : send())
-    const chips = document.querySelector('.input-chips')
-    if (chips && !$('chipAutotest')) {
-      const b = document.createElement('button')
-      b.className = 'input-chip' + (autotestEnabled ? ' active' : '')
-      b.id = 'chipAutotest'
-      b.title = tr('Автоматически запускать и проверять код', 'Automatically run and test code')
-      b.textContent = '🧪 Auto-test'
-      b.onclick = toggleAutotest
-      chips.appendChild(b)
-    }
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init)
   else init()
