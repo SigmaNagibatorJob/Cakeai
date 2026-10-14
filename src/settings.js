@@ -303,7 +303,7 @@ const Settings = (() => {
 
     const key = localStorage.getItem('cakeai_key') || ''
     const detectedProv = key ? await API.detectProvider(key) : null
-    const useKey = detectedProv === provider ? key : ''
+    const useKey = (detectedProv === provider || localStorage.getItem('cakeai_provider') === provider) ? key : ''
 
     const result = await API.listModels({ provider, key: useKey })
     const selected = getSelectedModel(provider)
@@ -368,6 +368,6 @@ const Settings = (() => {
     closeModelPicker()
   })
 
-  return { open, close, switchTab, onBgClick, onKeyChange, applyKey, pickProvider, openModelPicker, closeModelPicker, updateProviderTag, updateCards, saveSystemPrompt, setBackground, setLanguage }
+ return { open, close, switchTab, onBgClick, onKeyChange, applyKey, pickProvider, openModelPicker, closeModelPicker, updateProviderTag, updateCards, saveSystemPrompt, setBackground, setLanguage, applyBackground, applyLanguage, initLanguage }
 })()
 window.Settings = Settings
