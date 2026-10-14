@@ -391,7 +391,7 @@ const Chat = (() => {
     if (opts.copy && findRunnable(text)) html += '<button class="tool-btn" data-act="run">▶ ' + tr('Запустить код', 'Run code') + '</button>'
     tools.innerHTML = html
     div.querySelector('.msg-body').appendChild(tools)
-  }'
+  }
 
   const RISKY_RE = /\b(rm\s+-|rmtree|os\.remove|os\.unlink|os\.rmdir|os\.system|subprocess|shutil|child_process|execSync|spawn|eval\(|exec\(|__import__|winreg|powershell|requests\.|urllib|socket|fetch\(|fs\.(rm|unlink|rmdir|writeFile|appendFile))/i
   const INTERACTIVE_RE = /\b(input\s*\(|readline|while\s+True|while\s*\(\s*true\s*\)|\.listen\(|app\.run\(|tkinter|pygame|setInterval)/i
