@@ -1,6 +1,7 @@
 const Settings = (() => {
   const NAMES = {
-    claude: 'Claude', openai: 'ChatGPT', gemini: 'Gemini', deepseek: 'DeepSeek', groq: 'Groq', kimi: 'Kimi'
+    claude: 'Claude', openai: 'ChatGPT', gemini: 'Gemini', deepseek: 'DeepSeek',
+    groq: 'Groq', kimi: 'Kimi', orcarouter: 'OrcaRouter'
   }
 
   let pickerProvider = null
@@ -44,6 +45,7 @@ const Settings = (() => {
     document.querySelectorAll('.settings-pane').forEach(p => {
       p.style.display = p.id === 'pane-' + tabName ? 'flex' : 'none'
     })
+    if (tabName === 'mcp') loadMcpConfig()
   }
 
   function saveSystemPrompt(val) {
@@ -213,6 +215,104 @@ const Settings = (() => {
     applyLanguage(savedLang)
   }
 
+  // ── MCP ────────────────────────────────────────────────────────────────────
+  function setMcpStatus(text, type) {
+    const status = document.getElementById('mcpStatus')
+    if (!status) return
+    status.textContent = text || ''
+    status.className = 'mcp-status' + (type ? ' ' + type : '')
+  }
+
+  async function loadMcpConfig() {
+    const input = document.getElementById('mcpConfigInput')
+    const enabled = document.getElementById('mcpEnabled')
+    if (!input || !enabled || !API.mcpLoadConfig) return
+    try {
+      const config = await API.mcpLoadConfig()
+      enabled.checked = config.enabled === true
+      input.value = JSON.stringify({ mcpServers: config.mcpServers || {} }, null, 2)
+      if (config.loadError) setMcpStatus('Ошибка сохранённой конфигурации: ' + config.loadError, 'error')
+      else setMcpStatus(config.enabled ? 'MCP включён' : 'MCP выключен', config.enabled ? 'ok' : '')
+    } catch (error) {
+      setMcpStatus('Не удалось загрузить MCP: ' + error, 'error')
+    }
+  }
+
+  function readMcpConfig() {
+    const input = document.getElementById('mcpConfigInput')
+    let parsed
+    try {
+      parsed = JSON.parse(input.value || '{"mcpServers":{}}')
+    } catch (error) {
+      throw new Error('Некорректный JSON: ' + error.message)
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Конфигурация должна быть JSON-объектом')
+    }
+    return {
+      enabled: document.getElementById('mcpEnabled').checked,
+      mcpServers: parsed.mcpServers || {}
+    }
+  }
+
+  function renderMcpServers(result) {
+    const list = document.getElementById('mcpServerList')
+    if (!list) return
+    list.innerHTML = ''
+    for (const server of result.servers || []) {
+      const row = document.createElement('div')
+      row.className = 'mcp-server-row ' + (server.ok ? 'ok' : server.disabled ? '' : 'error')
+      const name = document.createElement('span')
+      name.className = 'mcp-server-name'
+      name.textContent = server.name
+      const state = document.createElement('span')
+      state.textContent = server.disabled
+        ? 'выключен'
+        : server.ok
+          ? `✓ ${server.tools} инструментов`
+          : '⚠ ' + (server.error || 'ошибка подключения')
+      row.append(name, state)
+      list.appendChild(row)
+    }
+  }
+
+  async function saveMcpConfig(testConnection) {
+    try {
+      const config = readMcpConfig()
+      setMcpStatus(testConnection ? 'Подключаю MCP-серверы…' : 'Сохраняю…', 'busy')
+      await API.mcpSaveConfig(config)
+      if (!testConnection) {
+        document.getElementById('mcpServerList').innerHTML = ''
+        setMcpStatus(config.enabled ? 'Сохранено. Серверы подключатся при следующем запросе.' : 'Сохранено. MCP выключен.', 'ok')
+        return
+      }
+      const result = await API.mcpTest({ key: localStorage.getItem('cakeai_key') || '' })
+      renderMcpServers(result)
+      const failed = (result.servers || []).filter(s => !s.ok && !s.disabled).length
+      if (!result.enabled) setMcpStatus('MCP выключен — включи переключатель и повтори.', 'error')
+      else if (failed) setMcpStatus(`Подключено инструментов: ${result.tools.length}. Ошибок серверов: ${failed}.`, 'error')
+      else setMcpStatus(`Готово: ${result.tools.length} MCP-инструментов.`, 'ok')
+    } catch (error) {
+      setMcpStatus(String(error.message || error), 'error')
+    }
+  }
+
+  function addOrcaMcpPreset() {
+    const input = document.getElementById('mcpConfigInput')
+    let parsed = { mcpServers: {} }
+    try { parsed = JSON.parse(input.value || '{"mcpServers":{}}') } catch (_) {}
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) parsed = { mcpServers: {} }
+    if (!parsed.mcpServers || typeof parsed.mcpServers !== 'object' || Array.isArray(parsed.mcpServers)) parsed.mcpServers = {}
+    parsed.mcpServers.orcarouter = {
+      command: 'npx',
+      args: ['-y', '@orcarouter/mcp'],
+      env: { ORCAROUTER_API_KEY: '${ORCAROUTER_API_KEY}' }
+    }
+    input.value = JSON.stringify({ mcpServers: parsed.mcpServers }, null, 2)
+    document.getElementById('mcpEnabled').checked = true
+    setMcpStatus('Пресет добавлен. Сохрани и проверь подключение.', 'ok')
+  }
+
   function close() {
     closeModelPicker()
     document.getElementById('settingsModal').style.display = 'none'
@@ -262,6 +362,9 @@ const Settings = (() => {
     localStorage.setItem('cakeai_key', val)
     if (p && p !== 'unknown') {
       localStorage.setItem('cakeai_provider', p)
+      if (p === 'orcarouter' && !localStorage.getItem('cakeai_model_orcarouter')) {
+        localStorage.setItem('cakeai_model_orcarouter', 'z-ai/glm-5.3-flash-free')
+      }
     }
     updateProviderTag(p || 'unknown')
     updateCards()
@@ -291,7 +394,7 @@ const Settings = (() => {
     const title = document.getElementById('modelPickerTitle')
     const hint = document.getElementById('modelPickerHint')
 
-    title.textContent = `Модели ${NAMES[provider]}`
+    title.textContent = provider === 'orcarouter' ? 'Бесплатные модели OrcaRouter' : `Модели ${NAMES[provider]}`
     list.innerHTML = '<div class="model-loading">Загрузка...</div>'
     hint.textContent = ''
 
@@ -321,8 +424,10 @@ const Settings = (() => {
       }
     }
     hint.textContent = result.fromApi
-      ? '✓ Список получен с API'
-      : 'Стандартный список (вставь ключ для актуальных моделей)'
+      ? (provider === 'orcarouter' ? '✓ Актуальные бесплатные модели с OrcaRouter API' : '✓ Список получен с API')
+      : (provider === 'orcarouter'
+          ? 'Офлайн-список бесплатных моделей (каталог обновится после добавления ключа)'
+          : 'Стандартный список (вставь ключ для актуальных моделей)')
   }
 
   function closeModelPicker() {
@@ -336,9 +441,6 @@ const Settings = (() => {
     tag.className = 'provider-tag ' + (p || '')
     tag.textContent = NAMES[p] || (p === 'unknown' ? '?' : 'Нет ключа')
   }
-
-  // Добавляем стиль для Kimi в CSS (если нужно)
-  // Можно добавить в style.css: .provider-tag.kimi { ... }
 
   function highlightCard(p) {
     document.querySelectorAll('.provider-card').forEach(c => {
@@ -368,6 +470,11 @@ const Settings = (() => {
     closeModelPicker()
   })
 
- return { open, close, switchTab, onBgClick, onKeyChange, applyKey, pickProvider, openModelPicker, closeModelPicker, updateProviderTag, updateCards, saveSystemPrompt, setBackground, setLanguage, applyBackground, applyLanguage, initLanguage }
+ return {
+   open, close, switchTab, onBgClick, onKeyChange, applyKey, pickProvider,
+   openModelPicker, closeModelPicker, updateProviderTag, updateCards,
+   saveSystemPrompt, setBackground, setLanguage, applyBackground, applyLanguage,
+   initLanguage, loadMcpConfig, saveMcpConfig, addOrcaMcpPreset
+ }
 })()
 window.Settings = Settings

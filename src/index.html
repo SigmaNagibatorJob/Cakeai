@@ -150,6 +150,7 @@ Type commands or let AI test code automatically.
       <!-- Навигация настроек -->
       <div class="settings-sidebar">
         <button class="settings-tab active" data-tab="providers" onclick="Settings.switchTab('providers')">🔌 Model Provider</button>
+        <button class="settings-tab"        data-tab="mcp" onclick="Settings.switchTab('mcp')">🧩 MCP-серверы</button>
         <button class="settings-tab"        data-tab="customization" onclick="Settings.switchTab('customization')">🎨 Кастомизация & RGB</button>
       </div>
       <!-- Содержимое вкладок -->
@@ -230,6 +231,17 @@ Type commands or let AI test code automatically.
                 <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://console.groq.com/keys')">🔑 Получить ключ</div>
               </div>
 
+              <div class="provider-card" data-p="orcarouter" onclick="Settings.pickProvider('orcarouter')">
+                <div class="provider-card-header">
+                  <div class="p-name orcarouter">OrcaRouter</div>
+                  <button class="provider-gear" title="Выбрать бесплатную модель" onclick="event.stopPropagation();Settings.openModelPicker('orcarouter', event)">⚙</button>
+                </div>
+                <div class="p-desc">Бесплатные GLM 5.3 Flash, DeepSeek, Hunyuan и авто-роутер.</div>
+                <div class="p-model" data-p="orcarouter"></div>
+                <div class="p-key">sk-orca-...</div>
+                <div class="p-link" onclick="event.stopPropagation();API.openExternal('https://www.orcarouter.ai/console/token')">🔑 Получить ключ</div>
+              </div>
+
               <div class="provider-card" data-p="kimi" onclick="Settings.pickProvider('kimi')">
                 <div class="provider-card-header">
                   <div class="p-name kimi">Kimi</div>
@@ -244,7 +256,45 @@ Type commands or let AI test code automatically.
           </div>
         </div>
 
-        <!-- Вкладка 2: Кастомизация & RGB (Фон, Язык и т.д.) -->
+        <!-- Вкладка 2: MCP -->
+        <div class="settings-pane" id="pane-mcp" style="display:none;flex-direction:column;gap:18px;">
+          <div class="setting-section">
+            <div class="mcp-toggle-row">
+              <div>
+                <div class="setting-label">Model Context Protocol</div>
+                <div class="mcp-help">Подключает локальные stdio- и удалённые Streamable HTTP/SSE-серверы. Их инструменты становятся доступны модели в чате.</div>
+              </div>
+              <label class="mcp-switch">
+                <input type="checkbox" id="mcpEnabled">
+                <span></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="mcp-warning">
+            ⚠ MCP-серверы могут читать файлы, ходить в сеть, выполнять команды и расходовать баланс внешних API. Добавляй только серверы, которым доверяешь. Вызовы инструментов выполняются автоматически по решению модели.
+          </div>
+
+          <div class="setting-section">
+            <div class="setting-label">Конфигурация <span class="mcp-inline-note">формат mcpServers</span></div>
+            <textarea id="mcpConfigInput" class="mcp-config" spellcheck="false" placeholder='{"mcpServers":{"example":{"command":"npx","args":["-y","package"]}}}'></textarea>
+            <div class="mcp-help">
+              Для секретов можно использовать <code>${ENV_NAME}</code>. Для команд через <code>npx</code> нужен установленный Node.js. Конфигурация хранится локально в профиле приложения с ограниченными правами доступа.
+            </div>
+          </div>
+
+          <div class="mcp-actions">
+            <button class="e-btn" onclick="Settings.addOrcaMcpPreset()">＋ OrcaRouter MCP</button>
+            <button class="e-btn" onclick="API.openExternal('https://modelcontextprotocol.io/docs/learn/client-concepts')">Документация</button>
+            <span class="mcp-actions-spacer"></span>
+            <button class="e-btn" onclick="Settings.saveMcpConfig(false)">Сохранить</button>
+            <button class="apply-btn" onclick="Settings.saveMcpConfig(true)">Сохранить и проверить</button>
+          </div>
+          <div class="mcp-status" id="mcpStatus"></div>
+          <div class="mcp-server-list" id="mcpServerList"></div>
+        </div>
+
+        <!-- Вкладка 3: Кастомизация & RGB (Фон, Язык и т.д.) -->
         <div class="settings-pane" id="pane-customization" style="display:none;flex-direction:column;gap:20px;">
           <div class="setting-section">
             <div class="setting-label">Цвет фона приложения / RGB тема</div>

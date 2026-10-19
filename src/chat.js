@@ -751,6 +751,22 @@ const Chat = (() => {
       sources = s
     })
 
+    API.onMcpTool?.(info => {
+      if (runId !== currentRun || !info) return
+      if (info.state === 'tool') {
+        const label = info.server && info.tool ? info.server + '/' + info.tool : info.name || 'tool'
+        if (info.toolState === 'error' || info.error) {
+          Status.set('MCP: ' + label + ' — ' + tr('ошибка', 'error'), 'err')
+        } else if (info.toolState === 'done') {
+          Status.set('MCP: ' + label + ' ✓', 'busy')
+        } else {
+          Status.set('MCP: ' + tr('выполняю ', 'running ') + label + '…', 'busy')
+        }
+      } else if (info.state === 'ready' && info.tools > 0) {
+        Status.set('MCP: ' + info.tools + ' ' + tr('инструментов подключено', 'tools connected'), 'busy')
+      }
+    })
+
     API.onStreamReasoning(chunk => {
       if (runId !== currentRun) return
       if (!thinkStarted) { thinkStarted = true; startThinking() }

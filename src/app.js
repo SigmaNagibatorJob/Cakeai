@@ -29,7 +29,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   const key  = localStorage.getItem('cakeai_key')
   const prov = localStorage.getItem('cakeai_provider')
   if (key) {
-    const detected = prov || await API.detectProvider(key)
+    const autoDetected = await API.detectProvider(key)
+    // До появления нативной поддержки ключ sk-orca-* мог сохраниться как OpenAI.
+    // Однозначный префикс позволяет безопасно исправить старую настройку.
+    const detected = autoDetected === 'orcarouter' ? autoDetected : (prov || autoDetected)
+    if (autoDetected === 'orcarouter') {
+      localStorage.setItem('cakeai_provider', 'orcarouter')
+      if (!localStorage.getItem('cakeai_model_orcarouter')) {
+        localStorage.setItem('cakeai_model_orcarouter', 'z-ai/glm-5.3-flash-free')
+      }
+    }
     Settings.updateProviderTag(detected)
   }
 

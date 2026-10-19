@@ -5,8 +5,15 @@ const fs = require('fs')
 const { execFile } = require('child_process')
 const os = require('os')
 const crypto = require('crypto')
+const { MCPManager } = require('./lib/mcp-manager')
+const {
+  runAnthropicToolLoop,
+  runGeminiToolLoop,
+  runOpenAIToolLoop
+} = require('./lib/mcp-agent')
 
 let win
+let mcpManager
 
 // ── Ключ шифрования истории ──────────────────────────────────────────────────
 function getMachineKey() {
@@ -56,8 +63,12 @@ function createWindow() {
   })
 }
 
-app.whenReady().then(createWindow)
+app.whenReady().then(() => {
+  mcpManager = new MCPManager(path.join(app.getPath('userData'), 'mcp-config.json'))
+  createWindow()
+})
 app.on('window-all-closed', () => app.quit())
+app.on('before-quit', () => { mcpManager?.closeAll().catch(() => {}) })
 
 // ── Window controls ──────────────────────────────────────────────────────────
 ipcMain.on('win-close',    () => win.close())
@@ -130,6 +141,28 @@ ipcMain.handle('rename-entry', (_, oldPath, newName) => {
 })
 
 ipcMain.handle('show-in-explorer', (_, p) => { shell.showItemInFolder(p); return true })
+
+// ── MCP (Model Context Protocol) ─────────────────────────────────────────────
+function requireMcpManager() {
+  if (!mcpManager) throw new Error('MCP ещё не инициализирован')
+  return mcpManager
+}
+
+function mcpSecretsForKey(key) {
+  return key && key.startsWith('sk-orca-') ? { ORCAROUTER_API_KEY: key } : {}
+}
+
+ipcMain.handle('mcp-config-load', () => requireMcpManager().loadConfig())
+ipcMain.handle('mcp-config-save', async (_, config) => {
+  return requireMcpManager().saveConfig(config)
+})
+ipcMain.handle('mcp-test', async (_, { key } = {}) => {
+  return requireMcpManager().getTools(mcpSecretsForKey(key))
+})
+ipcMain.handle('mcp-disconnect', async () => {
+  await requireMcpManager().closeAll()
+  return true
+})
 
 // ── Web Search (DuckDuckGo HTML) ─────────────────────────────────────────────
 function postForm(hostname, path_, headers, bodyStr) {
@@ -347,12 +380,13 @@ ipcMain.handle('web-search', (_, query) => doWebSearch(query))
 // ── AI API ───────────────────────────────────────────────────────────────────
 function detectProvider(key) {
   if (!key) return null
-  if (key.startsWith('sk-ant-')) return 'claude'
-  if (key.startsWith('AIza'))    return 'gemini'
-  if (key.startsWith('gsk_'))    return 'groq'
-  if (key.startsWith('dsk-'))    return 'deepseek'
+  if (key.startsWith('sk-orca-')) return 'orcarouter'
+  if (key.startsWith('sk-ant-'))  return 'claude'
+  if (key.startsWith('AIza'))     return 'gemini'
+  if (key.startsWith('gsk_'))     return 'groq'
+  if (key.startsWith('dsk-'))     return 'deepseek'
   if (key.startsWith('sk-') && key.length >= 48) return 'openai'
-  if (key.startsWith('sk-'))     return 'deepseek'
+  if (key.startsWith('sk-'))      return 'deepseek'
   return 'unknown'
 }
 
@@ -408,6 +442,17 @@ const PREFERRED_MODELS = {
     'moonshot-v1-128k',
     'moonshot-v1-32k',
     'kimi-latest'
+  ],
+  // Бесплатная линейка ротируется. API обновляет этот список автоматически;
+  // значения ниже нужны как офлайн-fallback, GLM 5.3 Flash — модель по умолчанию.
+  orcarouter: [
+    'z-ai/glm-5.3-flash-free',
+    'orcarouter/free',
+    'deepseek/deepseek-v4.1-flash-free',
+    'deepseek/deepseek-v4-flash-free',
+    'tencent/hy4-preview-free',
+    'tencent/hy3-free',
+    'orca/orcaverify-text1.0-free'
   ]
 }
 
@@ -417,7 +462,8 @@ const DEFAULT_MODEL = {
   gemini: 'gemini-3.5-flash',
   deepseek: 'deepseek-v4-flash',
   groq: 'llama-4-scout',
-  kimi: 'moonshot-v1-128k'
+  kimi: 'moonshot-v1-128k',
+  orcarouter: 'z-ai/glm-5.3-flash-free'
 }
 
 function trimMsgs(msgs, maxCount) {
@@ -466,9 +512,10 @@ function isChatModel(prov, id) {
 
 async function fetchAvailableModels(prov, key, force) {
   const fallback = PREFERRED_MODELS[prov] || []
-  if (!key) return { models: fallback, fromApi: false }
+  // Каталог OrcaRouter публичный: бесплатные модели можно обновить ещё до ввода ключа.
+  if (!key && prov !== 'orcarouter') return { models: fallback, fromApi: false }
 
-  const cacheKey = prov + ':' + key.slice(-8)
+  const cacheKey = prov + ':' + String(key || '').slice(-8)
   const hit = modelCache[cacheKey]
   if (!force && hit && Date.now() - hit.t < MODEL_CACHE_MS) {
     return { models: hit.models, fromApi: true }
@@ -496,10 +543,23 @@ async function fetchAvailableModels(prov, key, force) {
     } else if (prov === 'kimi') {
       const raw = await httpGet('api.moonshot.cn', '/v1/models', { 'Authorization': 'Bearer ' + key })
       items = (JSON.parse(raw).data || []).map(m => ({ id: m.id, created: m.created || 0 }))
+    } else if (prov === 'orcarouter') {
+      // Специальный публичный endpoint отдаёт только текущую free-линейку и
+      // заметно легче полного каталога /v1/models.
+      const raw = await httpGet('api.orcarouter.ai', '/api/free-package/public', {})
+      const data = JSON.parse(raw).data || {}
+      items = [
+        { id: 'orcarouter/free', created: 0 },
+        ...(data.models || []).map(m => ({ id: m.free_alias, created: 0 }))
+      ]
     }
 
     items = items.filter(m => m.id && isChatModel(prov, m.id)).sort(cmpNewest)
-    const models = items.map(m => m.id)
+    let models = [...new Set(items.map(m => m.id))]
+    if (prov === 'orcarouter') {
+      const priority = PREFERRED_MODELS.orcarouter
+      models = [...priority.filter(id => models.includes(id)), ...models.filter(id => !priority.includes(id))]
+    }
     if (!models.length) return { models: fallback, fromApi: false }
 
     modelCache[cacheKey] = { t: Date.now(), models }
@@ -511,6 +571,11 @@ async function fetchAvailableModels(prov, key, force) {
 
 // Самая свежая модель, но не «мини/лайт», если есть выбор
 function pickBestModel(prov, available) {
+  // Пользовательский default OrcaRouter должен быть предсказуемым: каталог
+  // постоянно ротируется и сортировка по created для free-моделей не помогает.
+  if (prov === 'orcarouter' && available.includes(DEFAULT_MODEL.orcarouter)) {
+    return DEFAULT_MODEL.orcarouter
+  }
   const big = available.find(m => !SMALL_RE.test(m))
   return big || available[0] || DEFAULT_MODEL[prov]
 }
@@ -541,6 +606,18 @@ function post(hostname, path_, headers, body) {
     req.on('error', reject)
     req.end(buf)
   })
+}
+
+async function postJson(hostname, path_, headers, payload) {
+  const raw = await post(hostname, path_, headers, JSON.stringify(payload))
+  let json
+  try { json = JSON.parse(raw) } catch (_) { throw new Error('API вернул некорректный JSON') }
+  if (json.error) {
+    const message = json.error.message || json.error
+    const retry = json.error.metadata?.retry_after_seconds
+    throw new Error((typeof message === 'string' ? message : JSON.stringify(message)) + (retry ? ` (повтор через ${retry} с)` : ''))
+  }
+  return json
 }
 
 const SYS_BASE = `Ты — Lungskull, ассистент, которого создал Cakein228.
@@ -602,7 +679,7 @@ ipcMain.handle('ai-send', async (_, { msgs, mode, key, provider, model, fileCtx 
   const sys = (SYS[mode] || SYS.general) + dateLine() + (fileCtx ? '\n\n' + fileCtx.slice(0, 12000) : '')
 
   if (prov === 'unknown' || !prov) {
-    return { text: '⚠️ Неизвестный провайдер. Поддерживаемые:\n• Claude — sk-ant-...\n• ChatGPT — sk-... (длинный)\n• Gemini — AIza...\n• DeepSeek — sk-.../dsk-...\n• Groq — gsk_...\n• Kimi — sk-...' }
+    return { text: '⚠️ Неизвестный провайдер. Поддерживаемые:\n• OrcaRouter — sk-orca-...\n• Claude — sk-ant-...\n• ChatGPT — sk-... (длинный)\n• Gemini — AIza...\n• DeepSeek — sk-.../dsk-...\n• Groq — gsk_...\n• Kimi — sk-...' }
   }
 
   try {
@@ -620,6 +697,14 @@ ipcMain.handle('ai-send', async (_, { msgs, mode, key, provider, model, fileCtx 
       const raw = await post('api.openai.com', '/v1/chat/completions', { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body)
       const j = JSON.parse(raw)
       if (j.error) throw j.error.message
+      return { text: j.choices[0].message.content }
+    }
+    if (prov === 'orcarouter') {
+      const orcaModel = await resolveModel('orcarouter', key, model)
+      const body = JSON.stringify({ model: orcaModel, max_tokens: 8192, messages: [{ role: 'system', content: sys }, ...msgs] })
+      const raw = await post('api.orcarouter.ai', '/v1/chat/completions', { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body)
+      const j = JSON.parse(raw)
+      if (j.error) throw j.error.message || j.error
       return { text: j.choices[0].message.content }
     }
     if (prov === 'gemini') {
@@ -696,7 +781,7 @@ function makeThinkSplitter(onThink, onText) {
   }
 }
 
-const THINK_RE = /reasoner|thinking|r1|deepseek-v[4-9]/i
+const THINK_RE = /reasoner|thinking|r1|deepseek-v[4-9]|glm-5|(?:^|\/)hy[34]/i
 
 ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fileCtx, customPrompt, deepthinkEnabled, webSearch }) => {
   const prov = provider || detectProvider(key)
@@ -712,7 +797,10 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
     try { win.webContents.send('stream-reasoning', text) } catch (e) {}
   }
   const splitter = makeThinkSplitter(reasoningChunk, chunk)
+  let completed = false
   const done = (err) => {
+    if (completed) return
+    completed = true
     if (currentStream === ctl) currentStream = null
     try { splitter.flush() } catch (e) {}
     try { win.webContents.send('stream-done', err || null) } catch (e) {}
@@ -765,6 +853,89 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
 
   const safeMsgs = prov === 'groq' ? trimMsgs(msgs, 8) : msgs
 
+  const sendMcpStatus = payload => {
+    try { win.webContents.send('mcp-tool-status', payload) } catch (_) {}
+  }
+
+  async function runWithMcpTools() {
+    const state = await requireMcpManager().getTools(mcpSecretsForKey(key))
+    if (!state.enabled) return false
+
+    sendMcpStatus({ state: 'ready', tools: state.tools.length, servers: state.servers, error: state.error })
+    if (!state.tools.length) return false
+
+    const callTool = async (name, args) => {
+      if (ctl.stopped) throw new Error('Запрос остановлен')
+      return requireMcpManager().callTool(name, args)
+    }
+    const onTool = info => sendMcpStatus({ ...info, state: 'tool', toolState: info.state })
+    const common = {
+      tools: state.tools,
+      callTool,
+      onTool,
+      onReasoning: reasoningChunk
+    }
+    let answer = ''
+
+    if (prov === 'claude') {
+      answer = await runAnthropicToolLoop({
+        ...common,
+        messages: safeMsgs,
+        request: ({ messages, tools }) => {
+          if (ctl.stopped) throw new Error('Запрос остановлен')
+          return postJson('api.anthropic.com', '/v1/messages', {
+            'Content-Type': 'application/json',
+            'x-api-key': key,
+            'anthropic-version': '2023-06-01'
+          }, { model: resolved, max_tokens: deepthinkEnabled ? 16384 : 8192, system: sys, messages, tools })
+        }
+      })
+    } else if (prov === 'gemini') {
+      const contents = safeMsgs.map(m => ({
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: m.content }]
+      }))
+      answer = await runGeminiToolLoop({
+        ...common,
+        contents,
+        request: ({ contents: nextContents, tools }) => {
+          if (ctl.stopped) throw new Error('Запрос остановлен')
+          return postJson('generativelanguage.googleapis.com', `/v1beta/models/${resolved}:generateContent?key=${key}`,
+            { 'Content-Type': 'application/json' }, {
+              system_instruction: { parts: [{ text: sys }] },
+              contents: nextContents,
+              tools,
+              generationConfig: { maxOutputTokens: 65536 }
+            })
+        }
+      })
+    } else {
+      const endpoints = {
+        openai: ['api.openai.com', '/v1/chat/completions', {}],
+        orcarouter: ['api.orcarouter.ai', '/v1/chat/completions', { max_tokens: 8192 }],
+        deepseek: ['api.deepseek.com', '/v1/chat/completions', { max_tokens: deepthinkEnabled ? 16384 : 8192 }],
+        groq: ['api.groq.com', '/openai/v1/chat/completions', { max_tokens: 4096 }],
+        kimi: ['api.moonshot.cn', '/v1/chat/completions', { max_tokens: deepthinkEnabled ? 16384 : 8192 }]
+      }
+      const endpoint = endpoints[prov]
+      if (!endpoint) return false
+      answer = await runOpenAIToolLoop({
+        ...common,
+        messages: [{ role: 'system', content: sys }, ...safeMsgs],
+        request: ({ messages, tools }) => {
+          if (ctl.stopped) throw new Error('Запрос остановлен')
+          return postJson(endpoint[0], endpoint[1], {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + key
+          }, { model: resolved, ...endpoint[2], messages, tools })
+        }
+      })
+    }
+
+    if (!ctl.stopped && answer) splitter.push(answer)
+    return true
+  }
+
   function streamSSE(hostname, path_, headers, body) {
     return new Promise((resolve, reject) => {
       const buf = Buffer.from(body)
@@ -779,6 +950,12 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
             try {
               const j = JSON.parse(errBody)
               msg = j.error?.message || j.error || errBody
+              const meta = j.error?.metadata
+              if (j.error?.code === 'free_rate_limited') {
+                if (meta?.reason === 'err_free_prompt_cap') msg = 'Превышен лимит размера запроса бесплатной модели. Сократи контекст или начни новый чат.'
+                else if (meta?.reason === 'err_free_access_denied') msg = 'Бесплатный доступ OrcaRouter пока недоступен для этого аккаунта.'
+                else if (meta?.retry_after_seconds) msg = `Лимит бесплатной модели. Повтори через ${meta.retry_after_seconds} с.`
+              }
             } catch (e) {}
             reject('HTTP ' + res.statusCode + ': ' + (typeof msg === 'string' ? msg : JSON.stringify(msg)))
           })
@@ -819,6 +996,11 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
   }
 
   try {
+    if (await runWithMcpTools()) {
+      done(null)
+      return
+    }
+
     if (prov === 'claude') {
       const headers = { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' }
       const base = {
@@ -868,6 +1050,29 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
       }
       if (lastErr) throw lastErr
 
+    } else if (prov === 'orcarouter') {
+      const orcaHeaders = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }
+      const mkBody = extra => JSON.stringify({
+        model: resolved,
+        max_tokens: deepthinkEnabled ? 16384 : 8192,
+        stream: true,
+        messages: [{ role: 'system', content: sys }, ...safeMsgs],
+        ...extra
+      })
+      const tries = deepthinkEnabled ? [{ reasoning_effort: 'high' }, {}] : [{ reasoning_effort: 'none' }, {}]
+      let lastErr = null
+      for (const extra of tries) {
+        try {
+          await streamSSE('api.orcarouter.ai', '/v1/chat/completions', orcaHeaders, mkBody(extra))
+          lastErr = null
+          break
+        } catch (e) {
+          lastErr = e
+          if (!String(e).startsWith('HTTP 400')) throw e
+        }
+      }
+      if (lastErr) throw lastErr
+
     } else if (prov === 'deepseek') {
       const dsHeaders = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }
       const mkBody = (x) => JSON.stringify({ model: resolved, max_tokens: deepthinkEnabled ? 16384 : 8192, stream: true, messages: [{ role: 'system', content: sys }, ...safeMsgs], ...x })
@@ -878,7 +1083,6 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
         if (!String(e).startsWith('HTTP 400') || !Object.keys(extra).length) throw e
         await streamSSE('api.deepseek.com', '/v1/chat/completions', dsHeaders, mkBody({}))
       }
-      
 
     } else if (prov === 'groq') {
       const extra = {}
@@ -1049,6 +1253,13 @@ async function callAI(prov, key, sys, messages, model) {
     const raw = await post('api.openai.com', '/v1/chat/completions', { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body)
     const j = JSON.parse(raw)
     if (j.error) throw j.error.message
+    return j.choices[0].message.content
+  } else if (prov === 'orcarouter') {
+    const orcaModel = await resolveModel('orcarouter', key, model)
+    const body = JSON.stringify({ model: orcaModel, max_tokens: 4096, messages: [{ role: 'system', content: sys }, ...messages] })
+    const raw = await post('api.orcarouter.ai', '/v1/chat/completions', { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body)
+    const j = JSON.parse(raw)
+    if (j.error) throw j.error.message || j.error
     return j.choices[0].message.content
   } else if (prov === 'deepseek') {
     const deepseekModel = await resolveModel('deepseek', key, model)

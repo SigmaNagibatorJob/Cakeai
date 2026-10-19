@@ -25,12 +25,19 @@ contextBridge.exposeInMainWorld('API', {
   aiStop:         ()     => ipcRenderer.invoke('ai-stop'),
   aiRunCheck:     (data) => ipcRenderer.invoke('ai-run-check', data),
 
+  // MCP
+  mcpLoadConfig: ()       => ipcRenderer.invoke('mcp-config-load'),
+  mcpSaveConfig: (config) => ipcRenderer.invoke('mcp-config-save', config),
+  mcpTest:       (data)   => ipcRenderer.invoke('mcp-test', data),
+  mcpDisconnect: ()       => ipcRenderer.invoke('mcp-disconnect'),
+
   onStreamChunk:     (cb) => ipcRenderer.on('stream-chunk',     (_, t) => cb(t)),
   onStreamReasoning: (cb) => ipcRenderer.on('stream-reasoning', (_, t) => cb(t)),
   onStreamDone:      (cb) => ipcRenderer.on('stream-done',      (_, e) => cb(e)),
   onSearchSources:   (cb) => ipcRenderer.on('search-sources',   (_, s) => cb(s)),
+  onMcpTool:         (cb) => ipcRenderer.on('mcp-tool-status',  (_, s) => cb(s)),
   offStream: () => {
-    ['stream-chunk', 'stream-reasoning', 'stream-done', 'search-sources']
+    ['stream-chunk', 'stream-reasoning', 'stream-done', 'search-sources', 'mcp-tool-status']
       .forEach(ch => ipcRenderer.removeAllListeners(ch))
   },
   getAssetPath: (file) => require('path').join(__dirname, 'assets', file),
