@@ -191,29 +191,154 @@ function parseDDGResults(html) {
   return results.slice(0, 5)
 }
 
-// Поиск с таймаутом 8 секунд, чтобы чат не зависал
-async function doWebSearch(query) {
-  const timeout = new Promise((_, rej) =>
-    setTimeout(() => rej(new Error('поиск не ответил за 8 секунд')), 8000))
-  try {
-    const raw = await Promise.race([
-      postForm('html.duckduckgo.com', '/html/', {
+// ── Поиск в интернете: Google News (для новостей) + DuckDuckGo + Bing ─────────
+function fetchText(urlStr, opts) {
+  const { headers = {}, body = null, timeout = 7000, redirects = 3 } = opts || {}
+  return new Promise((resolve, reject) => {
+    let u
+    try { u = new URL(urlStr) } catch (e) { return reject(e) }
+    const buf = body ? Buffer.from(body) : null
+    const reqOpts = {
+      method: buf ? 'POST' : 'GET',
+      headers: Object.assign({
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Referer': 'https://html.duckduckgo.com/'
-      }, `q=${encodeURIComponent(query)}`),
-      timeout
-    ])
-    const results = parseDDGResults(raw)
-    return {
-      results,
-      text: results.map((r, i) =>
-        `${i + 1}. ${r.title}\n   URL: ${r.url}\n   ${r.snippet}`
-      ).join('\n\n')
+        'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8'
+      }, headers, buf ? { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': buf.length } : {})
     }
-  } catch (e) {
-    return { results: [], text: '', error: e.message }
+    const req = https.request(u, reqOpts, res => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
+        res.resume()
+        const next = new URL(res.headers.location, u).toString()
+        return resolve(fetchText(next, { headers, timeout, redirects: redirects - 1 }))
+      }
+      let d = ''
+      res.setEncoding('utf8')
+      res.on('data', c => { d += c; if (d.length > 2e6) req.destroy() })
+      res.on('end', () => resolve({ status: res.statusCode, body: d }))
+      res.on('error', reject)
+    })
+    req.setTimeout(timeout, () => req.destroy(new Error('таймаут')))
+    req.on('error', reject)
+    req.end(buf || undefined)
+  })
+}
+
+function decodeEntities(s) {
+  return String(s || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n))
+    .replace(/&amp;/g, '&')
+    .replace(/&nbsp;/g, ' ')
+}
+const stripTags = s => decodeEntities(s).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+
+function parseRSS(xml, defaultSource) {
+  const out = []
+  const items = String(xml).match(/<item>[\s\S]*?<\/item>/g) || []
+  for (const it of items) {
+    const get = (tag) => {
+      const m = it.match(new RegExp('<' + tag + '[^>]*>([\\s\\S]*?)</' + tag + '>'))
+      return m ? m[1] : ''
+    }
+    let title = stripTags(get('title'))
+    const link = decodeEntities(get('link')).trim()
+    const date = decodeEntities(get('pubDate')).trim()
+    const source = stripTags(get('source')) || defaultSource || ''
+    let snippet = stripTags(get('description'))
+    if (source && title.endsWith(' - ' + source)) title = title.slice(0, -(source.length + 3))
+    if (snippet === title) snippet = ''
+    if (title && /^https?:\/\//.test(link)) {
+      out.push({ url: link, title, snippet: snippet.slice(0, 250), date, source })
+    }
+  }
+  return out
+}
+
+function fmtDate(s) {
+  const d = new Date(s)
+  return isNaN(d) ? '' : d.toISOString().slice(0, 10)
+}
+
+const NEWS_RE = /новост|свеж|актуальн|сегодня|вчера|недавно|недел|последн|news|latest|today|breaking/i
+
+function newsPeriod(q) {
+  if (/сегодня|вчера|24 час|today|yesterday/i.test(q)) return ' when:1d'
+  if (/недел|week/i.test(q)) return ' when:7d'
+  if (/месяц|month/i.test(q)) return ' when:30d'
+  return ' when:7d'
+}
+function cleanNewsQuery(q) {
+  return q
+    .replace(/за\s+(?:эту|последн\S*|прошл\S*|текущ\S*)\s+\S+/gi, ' ')
+    .replace(/на\s+этой\s+неделе|сегодня|вчера|за\s+неделю|за\s+месяц/gi, ' ')
+    .replace(/\s+/g, ' ').trim().slice(0, 120)
+}
+
+async function searchGoogleNews(query) {
+  const loc = /[а-яё]/i.test(query) ? 'hl=ru&gl=RU&ceid=RU:ru' : 'hl=en-US&gl=US&ceid=US:en'
+  const base = cleanNewsQuery(query) || query
+  for (const q of [base + newsPeriod(query), base]) {
+    const r = await fetchText('https://news.google.com/rss/search?q=' + encodeURIComponent(q) + '&' + loc)
+    const items = parseRSS(r.body, '')
+    if (items.length) return items.slice(0, 8)
+  }
+  return []
+}
+
+async function searchDDG(query) {
+  const r = await fetchText('https://html.duckduckgo.com/html/', {
+    body: 'q=' + encodeURIComponent(query),
+    headers: { 'Referer': 'https://html.duckduckgo.com/', 'Accept': 'text/html,application/xhtml+xml' }
+  })
+  if (r.status !== 200) throw new Error('HTTP ' + r.status + ' (возможно, блокировка)')
+  return parseDDGResults(r.body)
+}
+
+async function searchBing(query) {
+  const r = await fetchText('https://www.bing.com/search?format=rss&count=8&setmkt=ru-RU&q=' + encodeURIComponent(query))
+  return parseRSS(r.body, 'Bing').slice(0, 8)
+}
+
+async function doWebSearch(query) {
+  const isNews = NEWS_RE.test(query)
+  const engines = [
+    ['DuckDuckGo', () => searchDDG(query)],
+    ['Bing', () => searchBing(query)]
+  ]
+  if (isNews) engines.unshift(['Google News', () => searchGoogleNews(query)])
+
+  const limit = new Promise((_, rej) => setTimeout(() => rej(new Error('таймаут 9 с')), 9000))
+  const settled = await Promise.allSettled(engines.map(e => Promise.race([e[1](), limit])))
+
+  const diag = []
+  let all = []
+  settled.forEach((s, i) => {
+    const name = engines[i][0]
+    if (s.status === 'fulfilled') { diag.push(name + ': ' + s.value.length); all = all.concat(s.value) }
+    else diag.push(name + ': ' + ((s.reason && s.reason.message) || s.reason))
+  })
+
+  const seen = new Set()
+  const results = all.filter(r => {
+    const k = r.title.toLowerCase().slice(0, 60)
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  }).slice(0, 10)
+
+  console.log('[search] "' + query + '" → ' + diag.join(', '))
+
+  const text = results.map((r, i) =>
+    (i + 1) + '. ' + r.title + (r.source ? ' — ' + r.source : '') + (fmtDate(r.date) ? ' (' + fmtDate(r.date) + ')' : '') +
+    '\n   URL: ' + r.url + (r.snippet ? '\n   ' + r.snippet : '')
+  ).join('\n\n')
+
+  return {
+    results: results.map(r => ({ url: r.url, title: r.title + (r.source ? ' — ' + r.source : ''), snippet: r.snippet })),
+    text,
+    error: results.length ? undefined : diag.join('; ')
   }
 }
 
@@ -453,7 +578,7 @@ const SYS_BASE = `Ты — Lungskull, ассистент, которого со�
 - Сложное разбивай на маленькие понятные шаги.
 
 ПОИСК
-- Если в системном сообщении есть блок «Результаты поиска в интернете» — опирайся на него и можешь назвать источники.
+- Если в системном сообщении есть блок «Результаты поиска в интернете» - Если в системном сообщении есть блок результатов поиска в интернете — отвечай по нему и давай ссылки только из него. Никогда не выдумывай ссылки и не говори, что у тебя нет доступа к новостям, если такой блок есть.
 `
 
 const SYS_CODE = SYS_BASE
@@ -621,10 +746,10 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
       }
       const searchRes = await doWebSearch(q.slice(0, 200))
       if (searchRes.results.length > 0) {
-        sys += '\n\n📋 Результаты поиска в интернете:\n' + searchRes.text
+                sys += '\n\n📋 СВЕЖИЕ РЕЗУЛЬТАТЫ ПОИСКА В ИНТЕРНЕТЕ (сегодня ' + new Date().toLocaleDateString('ru-RU') + '). Отвечай, опираясь на них. Ссылки давай ТОЛЬКО из этого списка, дословно. Не придумывай ссылки и не называй сайты из памяти. Если по результатам нельзя ответить, так и скажи.\n\n' + searchRes.text
         try { win.webContents.send('search-sources', searchRes.results) } catch (e) {}
       } else {
-        sys += '\n\n⚠️ Поиск в интернете не дал результатов' + (searchRes.error ? ': ' + searchRes.error : '') + '. Ответь по своим знаниям и честно скажи, что поиск не сработал.'
+        sys += '\n\n⚠️ Поиск в интернете не дал результатов' + (searchRes.error ? ': ' + searchRes.error : '') + '. Ответь по своим знаниям и честно скажи, что поиск не сработал. Не придумывай ссылки и не советуй сайты «из памяти» как источники свежих новостей.'
       }
     }
   }
@@ -756,8 +881,17 @@ ipcMain.handle('ai-stream', async (event, { msgs, mode, key, provider, model, fi
       
 
     } else if (prov === 'groq') {
-      const body = JSON.stringify({ model: resolved, max_tokens: 4096, stream: true, messages: [{ role: 'system', content: sys }, ...safeMsgs] })
-      await streamSSE('api.groq.com', '/openai/v1/chat/completions', { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }, body)
+      const extra = {}
+      if (/qwen3/i.test(resolved)) extra.reasoning_effort = deepthinkEnabled ? 'default' : 'none'
+      else if (/gpt-oss/i.test(resolved)) extra.reasoning_effort = deepthinkEnabled ? 'high' : 'low'
+      const mkBody = (x) => JSON.stringify({ model: resolved, max_tokens: 4096, stream: true, messages: [{ role: 'system', content: sys }, ...safeMsgs], ...x })
+      const groqHeaders = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key }
+      try {
+        await streamSSE('api.groq.com', '/openai/v1/chat/completions', groqHeaders, mkBody(extra))
+      } catch (e) {
+        if (!String(e).startsWith('HTTP 400') || !Object.keys(extra).length) throw e
+        await streamSSE('api.groq.com', '/openai/v1/chat/completions', groqHeaders, mkBody({}))
+      }
 
     } else if (prov === 'gemini') {
       const contents = safeMsgs.map(m => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }))
