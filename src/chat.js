@@ -396,28 +396,25 @@ const Chat = (() => {
   const INTERACTIVE_RE = /\b(input\s*\(|readline|while\s+True|while\s*\(\s*true\s*\)|\.listen\(|app\.run\(|tkinter|pygame|setInterval)/i
   let autotestEnabled = localStorage.getItem('cakeai_autotest') !== '0'
 
-  function canAutoRun(text) {
-    const request = [...messages].reverse()
-      .find(m => m.role === 'user')?.content || ''
-
-    // Не запускаем примеры из новостей и пояснений.
-    const asksForCode =
-      /(напиши|создай|реализуй|исправь|протестируй|проверь|запусти|write|implement|fix|test|run)/i.test(request) &&
-      /(код|скрипт|функци|алгоритм|программ|python|javascript|code|script|function|algorithm)/i.test(request)
-
-    const forbidsRun =
-      /не\s+(?:запускай|выполняй|тестируй)|без\s+(?:запуска|выполнения)|do not run|don't run/i.test(request)
-
-    if (!asksForCode || forbidsRun) return false
-
+  // null — кода для запуска нет; '' — можно запускать; иначе причина, почему не запускаем
+  function autoRunCheck(text) {
     const m = findRunnable(text)
-    if (!m || RISKY_RE.test(m.code) || INTERACTIVE_RE.test(m.code)) return false
+    if (!m) {
+      const other = /```([\w+#-]+)/.exec(text || '')
+      const textLike = ['text', 'txt', 'json', 'html', 'css', 'markdown', 'md', 'xml', 'yaml', 'yml', 'diff', 'bash', 'sh', 'shell', 'powershell', 'cmd', 'console', 'csv', 'ini', 'toml']
+      if (other && !textLike.includes(other[1].toLowerCase())) {
+        return tr('язык «' + other[1] + '» не проверяется (умею Python и JavaScript)', 'the language "' + other[1] + '" is not tested (Python and JavaScript only)')
+      }
+      return null
+    }
+    if (RISKY_RE.test(m.code)) return tr('в коде есть опасные команды (файлы, система, сеть)', 'the code has risky commands (files, system, network)')
+    if (INTERACTIVE_RE.test(m.code)) return tr('код интерактивный (ввод, окна, бесконечный цикл)', 'the code is interactive (input, windows, endless loop)')
+    if (/\b(fetch|XMLHttpRequest|document|window)\b|api[_-]?key|YOUR_|https?:\/\//i.test(m.code)) return tr('код требует браузер, сеть или ключи', 'the code needs a browser, network or keys')
+    return ''
+  }
 
-    // Такие примеры требуют окружения, зависимостей или ключей.
-    const needsSetup =
-      /\b(import|require|fetch|XMLHttpRequest|document|window|process|open)\b|api[_-]?key|YOUR_|https?:\/\//i
-
-    return !needsSetup.test(m.code)
+  function canAutoRun(text) {
+    return autoRunCheck(text) === ''
   }
 
   function toggleAutotest() {
@@ -440,7 +437,11 @@ const Chat = (() => {
     btn.disabled = true
     btn.textContent = '⏳ ' + tr('Запускаю...', 'Running...')
     Status.set(tr('Тестирую код...', 'Testing code...'), 'busy')
-    msgEl.querySelector('.code-check-result')?.remove()
+    msgEl.querySelectorAll('.code-check-result').forEach(x => x.remove())
+    const pending = document.createElement('div')
+    pending.className = 'code-check-result'
+    pending.textContent = '⏳ ' + tr('Проверяю код...', 'Testing the code...')
+    msgEl.querySelector('.msg-body').appendChild(pending)
 
     const prov = localStorage.getItem('cakeai_provider') || null
     const model = prov ? (localStorage.getItem('cakeai_model_' + prov) || null) : null
@@ -459,6 +460,7 @@ const Chat = (() => {
 
     btn.disabled = false
     btn.textContent = old
+    pending.remove()
 
     const box = document.createElement('div')
     const label = document.createElement('div')
@@ -811,9 +813,16 @@ const Chat = (() => {
         scrollIfAuto()
         Status.set(tr('Готов', 'Ready'), 'ok')
         autoSave()
-        if (autotestEnabled && !stoppedByUser && canAutoRun(streamText)) {
+        const why = stoppedByUser ? null : autoRunCheck(streamText)
+        if (autotestEnabled && why === '') {
           const runBtn = u.div.querySelector('[data-act="run"]')
           if (runBtn) runCode(u.div, runBtn)
+        } else if (why) {
+          const note = document.createElement('div')
+          note.className = 'code-check-result'
+          note.textContent = 'ℹ️ ' + tr('Код не проверялся автоматически: ', 'Code was not tested automatically: ') + why +
+            (findRunnable(streamText) ? '. ' + tr('Можно запустить кнопкой «Запустить код».', 'You can run it with the "Run code" button.') : '.')
+          u.div.querySelector('.msg-body').appendChild(note)
         }
       }
 
@@ -842,7 +851,7 @@ const Chat = (() => {
             return false
           }
 
-            const fresh = /новост|актуальн|свеж|сегодня|сейчас|последн.{0,20}(верси|релиз|обновлен)|что нового|погод|курс валют|найди|поищи|latest|news|current|search/i
+                        const fresh = /новост|ссылк|стать[ией]|актуальн|свеж|сегодня|вчера|недавно|на этой неделе|за (?:эту|последн\S*|прошл\S*) (?:недел|месяц|год|день|дн)|(?:кто|что|где|какой|какая|какие)\s+сейчас|последн.{0,20}(?:верси|релиз|обновлен|новост)|что нового|погод|курс валют|найди|поищи|загугли|202[5-9]|latest|news|today/i
             if (fresh.test(question)) return true
 
            // Учитываем предыдущий вопрос для короткого уточнения.
